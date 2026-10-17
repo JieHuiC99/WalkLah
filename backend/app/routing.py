@@ -19,6 +19,30 @@ DESTINATIONS = [
         "latitude": 3.120459,
         "longitude": 101.654433,
     },
+    {
+        "id": "destination_2",
+        "name": "Dewan Tunku Canselor",
+        "latitude": 3.121471,
+        "longitude": 101.656612,
+    },
+    {
+        "id": "destination_3",
+        "name": "UM Bus Terminal",
+        "latitude": 3.116944,
+        "longitude": 101.658293,
+    },
+    {
+        "id": "destination_4",
+        "name": "Masjid Ar-Rahman",
+        "latitude": 3.117837,
+        "longitude": 101.662987,
+    },
+    {
+        "id": "destination_5",
+        "name": "Faculty of Computer Science & IT (FSKTM)",
+        "latitude": 3.128213,
+        "longitude": 101.650695,
+    },
 ]
 
 WALKING_SPEED_MPS = 1.2

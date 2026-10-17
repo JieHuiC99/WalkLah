@@ -74,5 +74,11 @@ class ReportStore:
                 "affected_segments": len(self.verified_segment_ids()),
             }
 
+    def clear(self) -> None:
+        """Remove all reports (demo reset)."""
+        with self._lock:
+            self._reports.clear()
+            self._next_id = 1        
+
 # Module-level instance for the API to use
 store = ReportStore()

@@ -4,8 +4,15 @@ from .graph_service import GraphService
 from .routing import RoutingService, DESTINATIONS
 from .report_store import store
 from .reports_api import create_reports_router, active_blocked_segments
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="WalkLah Backend")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize services (one shared graph for routing and report snapping)
 GRAPH_SERVICE = GraphService()
@@ -53,3 +60,9 @@ def get_route(start_id: str, destination_id: str, mode: str = "baseline"):
 def get_insights_summary():
     """Return dashboard metrics from the same store the routing uses."""
     return store.summary()
+
+@app.post("/demo/reset")
+def demo_reset():
+    """Demo helper: clear all reports. Remove before any public deployment."""
+    store.clear()
+    return {"status": "reset"}
