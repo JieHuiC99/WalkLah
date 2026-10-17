@@ -315,6 +315,133 @@ a {
   }
 }
 
+/* ---------- Map ---------- */
+
+.map-view {
+  position: absolute;
+  inset: 0;
+}
+
+/* MapLibre sets position: relative on its container, so size it explicitly. */
+.map-view__canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.map-fabs {
+  position: absolute;
+  z-index: 5;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.map-fab {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: var(--white);
+  color: var(--forest);
+  box-shadow: var(--shadow);
+}
+
+.map-fab:hover {
+  background: var(--kuning-soft);
+}
+
+.map-notice {
+  position: absolute;
+  z-index: 5;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 140px);
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--forest);
+  color: var(--white);
+  font-size: 0.875rem;
+  box-shadow: var(--shadow);
+}
+
+@media (min-width: 768px) {
+  .map-notice {
+    left: calc(var(--panel-width) + 32px);
+    transform: none;
+  }
+}
+
+.place-marker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.place-marker__dot {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--white);
+  border: 4px solid var(--green);
+  box-shadow: var(--shadow-sm);
+}
+
+.place-marker__label {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+
+.place-marker--origin .place-marker__dot {
+  border-color: var(--forest);
+  background: var(--kuning);
+}
+
+.place-marker--destination .place-marker__dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 3px solid var(--white);
+  background: var(--forest);
+}
+
+.place-marker--destination .place-marker__label,
+.place-marker--origin .place-marker__label {
+  background: var(--forest);
+  color: var(--white);
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 0.75rem;
+}
+
+@media (max-width: 767.98px) {
+  /* Keep attribution visible above the bottom sheet on phones. */
+  .maplibregl-ctrl-bottom-right {
+    top: 0;
+    bottom: auto;
+  }
+
+  .map-fabs {
+    top: 44px;
+  }
+}
+
 /* ---------- Bottom navigation ---------- */
 
 .bottom-nav {

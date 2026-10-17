@@ -3,6 +3,7 @@ import * as api from './api/walklahApi'
 import { readUrlState, writeUrlState, type StepStage, type Tab } from './app/navigation'
 import { BackendStatus, type BackendState } from './components/BackendStatus'
 import { BottomNav } from './components/BottomNav'
+import { MapView } from './components/MapView'
 import { ScreenHeader } from './components/ScreenHeader'
 import { SurveySheet } from './components/SurveySheet'
 import { HomePage } from './pages/HomePage'
@@ -73,7 +74,9 @@ export default function App() {
 
   return (
     <div className={`shell shell--${tab}`} data-version={dataVersion}>
-      <div className="map-area" />
+      <div className="map-area">
+        <MapView destinations={destinations} from={from} to={to} onOpenSurvey={() => setSurveyOpen(true)} />
+      </div>
       <BackendStatus state={backend} message={backendMessage} onRetry={retry} />
 
       <aside className="panel" aria-label="WalkLah">
