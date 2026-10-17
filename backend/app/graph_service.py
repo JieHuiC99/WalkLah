@@ -1,11 +1,12 @@
+from pathlib import Path
 import osmnx as ox
 import networkx as nx
 import os
 from typing import Optional
 
-
+DEFAULT_CACHE = Path(__file__).resolve().parent.parent / "data" / "walklah.graphml"
 class GraphService:
-    def __init__(self, cache_path: str = "backend/data/walklah.graphml"):
+    def __init__(self, cache_path: str = str(DEFAULT_CACHE)):
         self.cache_path = cache_path
         self.graph = None
 

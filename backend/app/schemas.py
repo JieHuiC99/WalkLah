@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime
 
 
@@ -30,9 +30,19 @@ class ReportBase(BaseModel):
     longitude: float
 
 
-class ReportCreate(ReportBase):
-    """Schema for creating a new report."""
-    pass
+class ReportCreate(BaseModel):
+    """Schema for creating a new report. segment_id is optional: if it is
+    missing, the server snaps latitude/longitude to the nearest footpath."""
+    segment_id: Optional[str] = None
+    category: str
+    description: Optional[str] = None
+    latitude: float
+    longitude: float
+
+
+class VerifyRequest(BaseModel):
+    """Schema for the operator verify action."""
+    status: Literal["verified_active", "verified_cleared", "disputed", "stale"]
 
 
 class Report(ReportBase):
