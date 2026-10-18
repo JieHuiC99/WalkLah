@@ -13,7 +13,7 @@ from statistics import mean
 from typing import Dict, List, Literal, Optional, Tuple
 
 import networkx as nx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 

@@ -242,7 +242,7 @@ class ComfortRouter:
             community = [s for s in affected if s in ctx.community]
             verified = len(affected) - len(community)
             if verified:
-                out.append(f"Avoids {verified} verified {'barrier' if verified == 1 else 'barriers'} on the shortest path")
+                out.append(f"Avoids {verified} verified {'barrier' if verified == 1 else 'barriers'}")
             if community:
                 n = len(community)
                 out.append(f"Avoids {n} {'hazard' if n == 1 else 'hazards'} confirmed by walkers")
@@ -299,9 +299,22 @@ class ComfortRouter:
         shortest = self.summarise(shortest_path, "shortest", ctx)
         shortest_ids = set(shortest["segment_ids"])
         affected = sorted(shortest_ids & ctx.blocked)
+        # Blocks this trip could meet. When there are any, also work out what each comfort
+        # route would have used without them, so its reasons name the hazards it avoids.
+        nearby_blocks = {sid for sid in ctx.blocked if sid in self.conditions.segments}
+        free_ctx = None
+        if nearby_blocks:
+            free_ctx = RouteContext(when=ctx.when, sun=ctx.sun, shade=ctx.shade, blocked=set(), step_free=step_free,
+                                    pending_by_segment=ctx.pending_by_segment, community=set(), rain=ctx.rain)
 
         routes = [shortest]
+        avoided_by_mode: Dict[str, List[str]] = {}
         for mode in ("practical", "enjoyable"):
+            if free_ctx is not None:
+                free_path = self._path(start, end, mode, free_ctx)
+                if free_path:
+                    free_ids = {segment_id(u, v) for u, v in zip(free_path, free_path[1:])}
+                    avoided_by_mode[mode] = sorted((free_ids | shortest_ids) & ctx.blocked)
             path = self._path(start, end, mode, ctx)
             if path is None:
                 why = "reported barriers" + (" and steps" if step_free else "")
@@ -315,7 +328,9 @@ class ComfortRouter:
         for route in routes:
             if route.get("available"):
                 route["affected_segment_ids"] = affected if route["mode"] != "shortest" else []
-                route["reasons"] = self.reasons(route, shortest, ctx, affected)
+                avoided = avoided_by_mode.get(route["mode"], affected)
+                route["avoided_segment_ids"] = avoided if route["mode"] != "shortest" else []
+                route["reasons"] = self.reasons(route, shortest, ctx, avoided)
                 route.setdefault("long_detour", False)
                 del route["segment_ids"]
 
