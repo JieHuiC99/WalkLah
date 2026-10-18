@@ -168,7 +168,7 @@ registerMs({
     'Tiada alternatif — halangan dan tangga menyekat setiap laluan.',
 
   // ---- route reasons
-  'Avoids {n} verified barrier(s) on the shortest path': 'Mengelak {n} halangan yang disahkan di laluan terpendek',
+  'Avoids {n} verified barrier(s)': 'Mengelak {n} halangan yang disahkan',
   'Avoids {n} hazard(s) confirmed by walkers': 'Mengelak {n} halangan yang disahkan oleh pejalan kaki',
   'Rain likely ({p}%): {a}% covered vs {b}% on the shortest route':
     'Mungkin hujan ({p}%): {a}% berbumbung berbanding {b}% di laluan terpendek',

@@ -4,7 +4,7 @@
 import { language, t } from './i18n'
 
 const PATTERNS: [RegExp, string, string[]][] = [
-  [/^Avoids (\d+) verified barriers? on the shortest path$/, 'Avoids {n} verified barrier(s) on the shortest path', ['n']],
+  [/^Avoids (\d+) verified barriers?$/, 'Avoids {n} verified barrier(s)', ['n']],
   [/^Avoids (\d+) hazards? confirmed by walkers$/, 'Avoids {n} hazard(s) confirmed by walkers', ['n']],
   [/^Rain likely \((\d+)%\): (\d+)% covered vs (\d+)% on the shortest route$/, 'Rain likely ({p}%): {a}% covered vs {b}% on the shortest route', ['p', 'a', 'b']],
   [/^Rain likely \((\d+)%\): (\d+)% covered$/, 'Rain likely ({p}%): {a}% covered', ['p', 'a']],
