@@ -3,12 +3,15 @@ import * as api from './api/walklahApi'
 import { readUrlState, writeUrlState, type StepStage, type Tab } from './app/navigation'
 import { BackendStatus, type BackendState } from './components/BackendStatus'
 import { BottomNav } from './components/BottomNav'
-import { MapView } from './components/MapView'
+import { MapView, type FlyTarget, type LatLon } from './components/MapView'
 import { ScreenHeader } from './components/ScreenHeader'
 import { SurveySheet } from './components/SurveySheet'
+import { DEMO_OBSTACLE } from './config/demo'
 import { useRoutes } from './hooks/useRoutes'
+import { CommunityPage } from './pages/CommunityPage'
 import { HomePage } from './pages/HomePage'
 import { NavigatePage } from './pages/NavigatePage'
+import { ReportPage } from './pages/ReportPage'
 import type { Destination, InsightsSummary, Report } from './types'
 
 const STAGE_TAB: Record<Exclude<StepStage, 'S'>, Tab> = { T: 'report', E: 'explore', P: 'operator' }
@@ -24,6 +27,8 @@ export default function App() {
   const [from, setFrom] = useState<string | null>(() => readUrlState().from)
   const [to, setTo] = useState<string | null>(() => readUrlState().to)
   const [surveyOpen, setSurveyOpen] = useState(false)
+  const [draft, setDraft] = useState<LatLon | null>(null)
+  const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null)
 
   const [backend, setBackend] = useState<BackendState>('checking')
   const [backendMessage, setBackendMessage] = useState<string | null>(null)
@@ -64,6 +69,26 @@ export default function App() {
     void connect()
   }, [connect])
 
+  /** Refetches reports + summary. Network failures switch the banner on. */
+  const refreshAll = useCallback(async () => {
+    try {
+      const [nextReports, nextSummary] = await Promise.all([api.getReports(), api.getSummary()])
+      setReports(nextReports)
+      setSummary(nextSummary)
+    } catch (error) {
+      if (error instanceof api.ApiError && error.kind === 'network') {
+        setBackend('offline')
+        setBackendMessage(error.message)
+      }
+    }
+  }, [])
+
+  /** Every mutation (report, verify, reset) ends here so all views and routes refresh. */
+  const afterMutation = useCallback(async () => {
+    await refreshAll()
+    setDataVersion((v) => v + 1)
+  }, [refreshAll])
+
   const goToStage = useCallback((stage: StepStage) => {
     if (stage === 'S') setSurveyOpen(true)
     else setTab(STAGE_TAB[stage])
@@ -73,6 +98,10 @@ export default function App() {
     setFrom(to)
     setTo(from)
   }, [from, to])
+
+  const flyTo = useCallback((point: LatLon) => {
+    setFlyTarget({ latitude: point.latitude, longitude: point.longitude, key: Date.now() })
+  }, [])
 
   const routes = useRoutes(from, to, dataVersion, backend === 'online')
   const [focus, setFocus] = useState<'baseline' | 'walklah'>('walklah')
@@ -88,7 +117,12 @@ export default function App() {
           baseline={routePair?.baseline?.geometry ?? null}
           walklah={routePair?.walklah?.geometry ?? null}
           focus={focus}
-          fitKey={routePair?.key ?? null}
+          fitKey={tab === 'explore' ? (routePair?.key ?? null) : null}
+          reports={reports}
+          placing={tab === 'report'}
+          draft={tab === 'report' ? draft : null}
+          onPlace={setDraft}
+          flyTarget={flyTarget}
           onOpenSurvey={() => setSurveyOpen(true)}
         />
       </div>
@@ -124,9 +158,24 @@ export default function App() {
               onStage={goToStage}
             />
           )}
-          {tab === 'report' && <ScreenHeader title="Report an issue" stage="T" onStage={goToStage} />}
+          {tab === 'report' && (
+            <ReportPage
+              draft={draft}
+              onUseDemoSpot={() => {
+                setDraft({ ...DEMO_OBSTACLE })
+                flyTo(DEMO_OBSTACLE)
+              }}
+              onClearDraft={() => setDraft(null)}
+              onSubmitted={async () => {
+                setDraft(null)
+                await afterMutation()
+              }}
+              onOpenCommunity={() => setTab('community')}
+              onStage={goToStage}
+            />
+          )}
           {tab === 'community' && (
-            <ScreenHeader title="Community updates" subtitle={`${reports.length} reports near Universiti Malaya`} stage="T" onStage={goToStage} />
+            <CommunityPage reports={reports} onShowOnMap={flyTo} onReport={() => setTab('report')} onStage={goToStage} />
           )}
           {tab === 'operator' && (
             <ScreenHeader

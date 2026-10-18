@@ -3,8 +3,11 @@ import type { Map as MapLibreMap, PaddingOptions } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { useEffect, useRef, useState } from 'react'
+import { categoryLabel } from '../config/categories'
 import { MAP_CENTER, MAP_STYLE_URL, MAP_ZOOM, MAX_BOUNDS } from '../config/map'
+import { STATUS_META } from '../config/status'
 import { applyWalkLahPalette, FALLBACK_STYLE } from '../map/palette'
+import { ensureReportLayers, REPORTS_LAYER, setReportData, startReportPulse } from '../map/reportLayers'
 import {
   BASELINE_SOURCE,
   ensureRouteLayers,
@@ -13,7 +16,8 @@ import {
   startRouteFlow,
   WALKLAH_SOURCE,
 } from '../map/routeLayers'
-import type { Destination, LineStringGeometry } from '../types'
+import { reportPopupContent } from '../map/reportPopup'
+import type { Destination, LineStringGeometry, Report } from '../types'
 import { Icon } from './icons'
 
 const STYLE_TIMEOUT_MS = 10_000
@@ -21,6 +25,15 @@ const STYLE_TIMEOUT_MS = 10_000
 // MapLibre finds its worker relative to its own module URL, which breaks once Vite pre-bundles
 // the library, so point it at the (self-contained) worker file explicitly.
 maplibregl.setWorkerUrl(workerUrl)
+
+export interface LatLon {
+  latitude: number
+  longitude: number
+}
+
+export interface FlyTarget extends LatLon {
+  key: number
+}
 
 interface Props {
   destinations: Destination[]
@@ -31,6 +44,12 @@ interface Props {
   focus: 'baseline' | 'walklah'
   /** Changes whenever the camera should frame the current routes. */
   fitKey: string | null
+  reports: Report[]
+  /** Report placement mode: map clicks place (and dragging moves) the draft pin. */
+  placing: boolean
+  draft: LatLon | null
+  onPlace: (point: LatLon) => void
+  flyTarget: FlyTarget | null
   onOpenSurvey: () => void
 }
 
@@ -44,12 +63,20 @@ function cameraPadding(): PaddingOptions {
   return { top: 70, right: 90, bottom: 70, left: (panel?.right ?? 416) + 60 }
 }
 
-export function MapView({ destinations, from, to, baseline, walklah, focus, fitKey, onOpenSurvey }: Props) {
+export function MapView(props: Props) {
+  const { destinations, from, to, baseline, walklah, focus, fitKey, reports, placing, draft, onPlace, flyTarget, onOpenSurvey } =
+    props
   const containerRef = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<MapLibreMap | null>(null)
   // Bumped each time a style finishes loading, so overlay data is re-applied after a style swap.
   const [styleVersion, setStyleVersion] = useState(0)
   const [baseMapFailed, setBaseMapFailed] = useState(false)
+
+  // Latest values for map event handlers that are bound once.
+  const live = useRef({ placing, onPlace, reports })
+  useEffect(() => {
+    live.current = { placing, onPlace, reports }
+  })
 
   // Create the map once. StrictMode mounts twice in development, so cleanup must remove it.
   useEffect(() => {
@@ -91,16 +118,43 @@ export function MapView({ destinations, from, to, baseline, walklah, focus, fitK
       }
       window.clearTimeout(timer)
       ensureRouteLayers(instance)
+      ensureReportLayers(instance)
       setStyleVersion((v) => v + 1)
     })
     // Only a failure before the style has loaded triggers the fallback; later tile errors are ignored.
     instance.on('error', switchToFallback)
     instance.once('load', () => setMap(instance))
+
+    // Clicking a report opens its details; otherwise, in placement mode, the click places the pin.
+    let popup: maplibregl.Popup | null = null
+    instance.on('click', (event) => {
+      const hit = instance.getLayer(REPORTS_LAYER)
+        ? instance.queryRenderedFeatures(event.point, { layers: [REPORTS_LAYER] })[0]
+        : undefined
+      const report = hit && live.current.reports.find((r) => r.id === hit.properties?.id)
+      if (report) {
+        popup?.remove()
+        popup = new maplibregl.Popup({ offset: 14, closeButton: true, maxWidth: '260px' })
+          .setLngLat([report.longitude, report.latitude])
+          .setDOMContent(reportPopupContent(report))
+          .addTo(instance)
+        return
+      }
+      if (live.current.placing) {
+        live.current.onPlace({ latitude: event.lngLat.lat, longitude: event.lngLat.lng })
+      }
+    })
+    instance.on('mouseenter', REPORTS_LAYER, () => (instance.getCanvas().style.cursor = 'pointer'))
+    instance.on('mouseleave', REPORTS_LAYER, () => (instance.getCanvas().style.cursor = ''))
+
     const stopFlow = startRouteFlow(instance)
+    const stopPulse = startReportPulse(instance)
 
     return () => {
       window.clearTimeout(timer)
       stopFlow()
+      stopPulse()
+      popup?.remove()
       instance.remove()
       setMap(null)
     }
@@ -119,6 +173,12 @@ export function MapView({ destinations, from, to, baseline, walklah, focus, fitK
     setRouteFocus(map, focus)
   }, [map, styleVersion, focus])
 
+  useEffect(() => {
+    if (!map) return
+    ensureReportLayers(map)
+    setReportData(map, reports)
+  }, [map, styleVersion, reports])
+
   // Frame both routes (their union) whenever a new result arrives.
   useEffect(() => {
     if (!map || !fitKey) return
@@ -132,6 +192,55 @@ export function MapView({ destinations, from, to, baseline, walklah, focus, fitK
     // Only refit when the key changes, not on every geometry identity change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, fitKey])
+
+  useEffect(() => {
+    if (!map || !flyTarget) return
+    map.flyTo({
+      center: [flyTarget.longitude, flyTarget.latitude],
+      zoom: Math.max(map.getZoom(), 17.5),
+      padding: cameraPadding(),
+      duration: 900,
+    })
+  }, [map, flyTarget])
+
+  useEffect(() => {
+    if (!map) return
+    map.getCanvas().style.cursor = placing ? 'crosshair' : ''
+  }, [map, placing])
+
+  // Draft pin for a new report: draggable so the spot can be fine-tuned.
+  useEffect(() => {
+    if (!map || !draft) return
+    const el = document.createElement('div')
+    el.className = 'draft-pin'
+    el.setAttribute('aria-label', 'New report location')
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom', draggable: true })
+      .setLngLat([draft.longitude, draft.latitude])
+      .addTo(map)
+    marker.on('dragend', () => {
+      const { lat, lng } = marker.getLngLat()
+      live.current.onPlace({ latitude: lat, longitude: lng })
+    })
+    return () => {
+      marker.remove()
+    }
+  }, [map, draft])
+
+  // Label pills next to active obstacles so the reason for a detour reads at a glance.
+  useEffect(() => {
+    if (!map) return
+    const pills = reports
+      .filter((r) => STATUS_META[r.status]?.blocksRoutes)
+      .map((r) => {
+        const el = document.createElement('div')
+        el.className = 'obstacle-pill'
+        el.textContent = `${categoryLabel(r.category)} · ${STATUS_META[r.status].label}`
+        return new maplibregl.Marker({ element: el, anchor: 'left', offset: [16, 0] })
+          .setLngLat([r.longitude, r.latitude])
+          .addTo(map)
+      })
+    return () => pills.forEach((m) => m.remove())
+  }, [map, reports])
 
   // Destination markers (HTML markers, so they still render on the fallback style without fonts).
   useEffect(() => {
@@ -166,11 +275,36 @@ export function MapView({ destinations, from, to, baseline, walklah, focus, fitK
           <Icon name="locate" size={20} />
         </button>
       </div>
+      {placing && (
+        <div className="map-hint" role="status">
+          <Icon name="pin" size={16} /> Tap the map where the problem is — drag the pin to adjust
+        </div>
+      )}
       {baseMapFailed && (
         <div className="map-notice" role="status">
           <Icon name="info" size={16} /> Base map unavailable — routes and reports still shown
         </div>
       )}
+      <MapLegend show={reports.length > 0 || Boolean(baseline)} />
+    </div>
+  )
+}
+
+function MapLegend({ show }: { show: boolean }) {
+  if (!show) return null
+  return (
+    <div className="map-legend" aria-label="Map legend">
+      <span>
+        <i className="map-legend__line map-legend__line--usual" /> Usual path
+      </span>
+      <span>
+        <i className="map-legend__line map-legend__line--walklah" /> WalkLah route
+      </span>
+      {(['pending', 'verified_active', 'verified_cleared'] as const).map((s) => (
+        <span key={s}>
+          <i className="map-legend__dot" style={{ background: STATUS_META[s].color }} /> {STATUS_META[s].label}
+        </span>
+      ))}
     </div>
   )
 }
