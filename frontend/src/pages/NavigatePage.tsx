@@ -72,7 +72,10 @@ function RouteResults({ from, to, routes, focus, onFocus }: Props) {
   if (from === to) {
     return <p className="inline-error">Start and destination must be different places.</p>
   }
-  if (routes.status === 'loading' || routes.status === 'idle') {
+  if (routes.status === 'idle') {
+    return <p className="empty-note">Routes appear once the WalkLah server is reachable.</p>
+  }
+  if (routes.status === 'loading') {
     return (
       <div className="loading-card" role="status">
         <span className="spinner" aria-hidden="true" />

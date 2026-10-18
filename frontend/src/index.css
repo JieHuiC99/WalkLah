@@ -1926,6 +1926,25 @@ a {
   font-weight: 700;
 }
 
+.crash-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 520px;
+  margin: 10vh auto;
+  padding: 24px;
+}
+
+.crash-screen pre {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--sand);
+  font-size: 0.8125rem;
+}
+
 /* ---------- Cards and sheets ---------- */
 
 .info-card {

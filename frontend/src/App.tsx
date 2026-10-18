@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from './api/walklahApi'
 import { readUrlState, writeUrlState, type StepStage, type Tab } from './app/navigation'
 import { BackendStatus, type BackendState } from './components/BackendStatus'
@@ -89,10 +89,42 @@ export default function App() {
     setDataVersion((v) => v + 1)
   }, [refreshAll])
 
-  const goToStage = useCallback((stage: StepStage) => {
-    if (stage === 'S') setSurveyOpen(true)
-    else setTab(STAGE_TAB[stage])
-  }, [])
+  // Another device (or the API docs page) may have changed reports: refresh when the window
+  // regains focus, and quietly try to reconnect if the server was unreachable.
+  const backendRef = useRef(backend)
+  useEffect(() => {
+    backendRef.current = backend
+  }, [backend])
+  useEffect(() => {
+    const onFocus = () => {
+      if (backendRef.current === 'online') void afterMutation()
+      else if (backendRef.current === 'offline') void connect()
+    }
+    const onVisible = () => document.visibilityState === 'visible' && onFocus()
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [afterMutation, connect])
+
+  /** Switching screens shows fresh data: reports, summary and routes are refetched. */
+  const changeTab = useCallback(
+    (next: Tab) => {
+      setTab(next)
+      if (backendRef.current === 'online') void afterMutation()
+    },
+    [afterMutation],
+  )
+
+  const goToStage = useCallback(
+    (stage: StepStage) => {
+      if (stage === 'S') setSurveyOpen(true)
+      else changeTab(STAGE_TAB[stage])
+    },
+    [changeTab],
+  )
 
   const swap = useCallback(() => {
     setFrom(to)
@@ -138,7 +170,7 @@ export default function App() {
               onFromChange={setFrom}
               onToChange={setTo}
               onSwap={swap}
-              onFindRoute={() => setTab('explore')}
+              onFindRoute={() => changeTab('explore')}
               onStage={goToStage}
             />
           )}
@@ -154,7 +186,7 @@ export default function App() {
               focus={focus}
               onFocus={setFocus}
               reportCount={reports.length}
-              onOpenCommunity={() => setTab('community')}
+              onOpenCommunity={() => changeTab('community')}
               onStage={goToStage}
             />
           )}
@@ -170,12 +202,12 @@ export default function App() {
                 setDraft(null)
                 await afterMutation()
               }}
-              onOpenCommunity={() => setTab('community')}
+              onOpenCommunity={() => changeTab('community')}
               onStage={goToStage}
             />
           )}
           {tab === 'community' && (
-            <CommunityPage reports={reports} onShowOnMap={flyTo} onReport={() => setTab('report')} onStage={goToStage} />
+            <CommunityPage reports={reports} onShowOnMap={flyTo} onReport={() => changeTab('report')} onStage={goToStage} />
           )}
           {tab === 'operator' && (
             <DashboardPage
@@ -185,14 +217,14 @@ export default function App() {
               dataVersion={dataVersion}
               onChanged={afterMutation}
               onShowOnMap={(report) => {
-                setTab('explore')
+                changeTab('explore')
                 flyTo(report)
               }}
               onStage={goToStage}
             />
           )}
         </div>
-        <BottomNav active={tab} onChange={setTab} />
+        <BottomNav active={tab} onChange={changeTab} />
       </aside>
 
       <SurveySheet open={surveyOpen} destinations={destinations} onClose={() => setSurveyOpen(false)} />
