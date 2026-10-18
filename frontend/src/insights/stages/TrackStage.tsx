@@ -8,6 +8,7 @@ import { statusMeta } from '../../config/status'
 import type { Report, ReportEvent, ReportStatus, VerifyStatus } from '../../types'
 import { formatRelative } from '../../utils/format'
 import type { StageProps } from '../InsightsApp'
+import { Sparkline } from '../Sparkline'
 import { StageHeader } from './StageHeader'
 
 const ACTIONS: Record<ReportStatus, { label: string; status: VerifyStatus; primary?: boolean }[]> = {
@@ -41,7 +42,7 @@ function queueOrder(a: Report, b: Report): number {
   return rank(a) - rank(b) || b.confirmations.still_there - a.confirmations.still_there || b.created_at.localeCompare(a.created_at)
 }
 
-export function TrackStage({ operatorKey, overview, reports, refresh, flyTo, startPick, pick, picked, clearPicked }: StageProps) {
+export function TrackStage({ operatorKey, overview, reports, trends, refresh, flyTo, startPick, pick, picked, clearPicked }: StageProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null)
   const [evidence, setEvidence] = useState<Record<string, string>>({})
@@ -107,13 +108,20 @@ export function TrackStage({ operatorKey, overview, reports, refresh, flyTo, sta
         ))}
       </div>
 
+      {trends && (
+        <div className="sparkline-row">
+          <Sparkline label="Reports" values={trends.series.reports} weeks={trends.weeks} color="var(--kuning-ink)" />
+          <Sparkline label="Resolved" values={trends.series.resolved} weeks={trends.weeks} />
+        </div>
+      )}
+
       <p className="info-note">
         <Icon name="info" size={16} /> Temporary hazards confirmed by 3 or more walkers are already avoided by routes.
         Verify or clear them after a site check; your decision overrides walker votes.
       </p>
 
       {reports.length === 0 ? (
-        <p className="empty-note">No reports yet. Reports from WalkLah Go appear here.</p>
+        <p className="empty-note">No reports in this area yet. Reports from WalkLah Go appear here.</p>
       ) : (
         <ul className="ops-list">
           {[...reports].sort(queueOrder).map((report) => {

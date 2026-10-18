@@ -203,7 +203,7 @@ export function WalkScreen({ route, destination, preview, onPreviewChange, onPos
 
   const sendFeedback = async (passable: 'yes' | 'partly' | 'no') => {
     try {
-      await api.sendFeedback(route.mode, passable, null, deviceId())
+      await api.sendFeedback(route.mode, passable, null, deviceId(), position)
     } finally {
       setFeedback('sent')
     }

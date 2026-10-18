@@ -26,6 +26,7 @@ export function readGoUrl() {
     to: parsePoint(p.get('to'), p.get('tn'), p.get('ta')),
     time,
     mode,
+    lang: p.get('lang') === 'ms' || p.get('lang') === 'en' ? (p.get('lang') as 'ms' | 'en') : null,
   }
 }
 

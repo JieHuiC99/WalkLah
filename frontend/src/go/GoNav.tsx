@@ -1,4 +1,5 @@
 import { Icon, type IconName } from '../components/icons'
+import { t } from './i18n'
 import type { GoTab } from './types'
 
 const ITEMS: { tab: GoTab; label: string; icon: IconName }[] = [
@@ -21,7 +22,7 @@ export function GoNav({ active, onChange }: { active: GoTab; onChange: (tab: GoT
           onClick={() => onChange(item.tab)}
         >
           <Icon name={item.icon} size={20} />
-          <span>{item.label}</span>
+          <span>{t(item.label)}</span>
         </button>
       ))}
     </nav>

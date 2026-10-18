@@ -10,6 +10,14 @@ import InsightsApp from './insights/InsightsApp.tsx'
 const isInsights = new URLSearchParams(window.location.search).get('app') === 'insights'
 document.title = isInsights ? 'WalkLah Insights' : 'WalkLah Go'
 
+// Installable app: the service worker caches only the app shell (production builds only,
+// so development always loads fresh code).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => undefined)
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>{isInsights ? <InsightsApp /> : <GoApp />}</ErrorBoundary>

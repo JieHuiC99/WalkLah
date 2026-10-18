@@ -502,3 +502,180 @@
   text-align: center;
   font-size: 0.875rem;
 }
+
+/* ---------- Area, heatmap, trends, cost ---------- */
+
+.area-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.area-bar .segmented button {
+  min-height: 34px;
+  font-size: 0.8125rem;
+}
+
+.area-bar p {
+  margin: 0;
+}
+
+.insights__map {
+  position: relative;
+}
+
+.heat-toggle {
+  position: absolute;
+  z-index: 5;
+  left: 12px;
+  bottom: 28px;
+  box-shadow: var(--shadow);
+  background: var(--white);
+}
+
+.heat-toggle button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.8125rem;
+}
+
+.stage-subhead {
+  margin: 14px 0 8px;
+  font-size: 0.875rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tile-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.sparkline-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.sparkline figcaption {
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+}
+
+.sparkline figcaption span {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sparkline figcaption strong {
+  font-size: 1.375rem;
+  line-height: 1.1;
+}
+
+.sparkline figcaption small {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
+.cost-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cost-field__input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.cost-field__input input {
+  flex: 1;
+}
+
+/* ---------- Printable township report ---------- */
+
+.print-report {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .insights__header,
+  .insights__main,
+  .insights__error {
+    display: none !important;
+  }
+
+  .insights {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .print-report {
+    display: block;
+    color: #000;
+    font-size: 11pt;
+  }
+
+  .print-report h1 {
+    margin: 0 0 4px;
+    font-size: 18pt;
+  }
+
+  .print-report h2 {
+    margin: 18px 0 6px;
+    font-size: 13pt;
+    border-bottom: 2px solid #10231c;
+    padding-bottom: 2px;
+  }
+
+  .print-report table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .print-report th,
+  .print-report td {
+    padding: 4px 6px;
+    border: 1px solid #ccc;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .print-report th {
+    background: #f3f1ea;
+  }
+
+  .print-report__note {
+    font-size: 9pt;
+    color: #444;
+  }
+}

@@ -47,7 +47,8 @@ export default function GoApp() {
   const [from, setFrom] = useState<Endpoint | null>(initial.from)
   const [to, setTo] = useState<Endpoint | null>(initial.to)
   const [timeChoice, setTimeChoice] = useState<TimeChoice>(initial.time)
-  const [prefs, setPrefsState] = useState<GoPrefs>(loadPrefs)
+  // A shared link may choose the language (?lang=ms); otherwise the phone's saved choice.
+  const [prefs, setPrefsState] = useState<GoPrefs>(() => ({ ...loadPrefs(), ...(initial.lang ? { lang: initial.lang } : {}) }))
   const [modeChoice, setModeChoice] = useState<RouteMode | null>(initial.mode)
 
   setLanguage(prefs.lang)
@@ -428,7 +429,7 @@ export default function GoApp() {
           <SegmentSheet segmentId={segmentId} at={atFor(timeChoice)} onClose={() => setSegmentId(null)} />
         )}
         {aboutOpen && <AboutSheet pilot={pilot} prefs={prefs} onPrefs={setPrefs} onClose={() => setAboutOpen(false)} />}
-        {feedbackOpen && <FeedbackSheet mode={selectedMode} onClose={() => setFeedbackOpen(false)} />}
+        {feedbackOpen && <FeedbackSheet mode={selectedMode} near={to} onClose={() => setFeedbackOpen(false)} />}
       </div>
     </DeviceFrame>
   )

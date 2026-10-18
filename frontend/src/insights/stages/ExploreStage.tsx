@@ -4,17 +4,18 @@ import { Icon } from '../../components/icons'
 import type { FeedbackRow } from '../../types'
 import { formatRelative, formatSigned } from '../../utils/format'
 import type { StageProps } from '../InsightsApp'
+import { Sparkline } from '../Sparkline'
 import { StageHeader } from './StageHeader'
 
-export function ExploreStage({ operatorKey, overview }: StageProps) {
+export function ExploreStage({ operatorKey, overview, bbox, trends }: StageProps) {
   const [feedback, setFeedback] = useState<FeedbackRow[]>([])
   useEffect(() => {
     let cancelled = false
-    api.getFeedback(operatorKey).then((rows) => !cancelled && setFeedback(rows), () => undefined)
+    api.getFeedback(operatorKey, bbox).then((rows) => !cancelled && setFeedback(rows), () => undefined)
     return () => {
       cancelled = true
     }
-  }, [operatorKey])
+  }, [operatorKey, bbox])
 
   const e = overview?.explore
   const answered = e ? e.feedback.yes + e.feedback.partly + e.feedback.no : 0
@@ -24,7 +25,7 @@ export function ExploreStage({ operatorKey, overview }: StageProps) {
 
       {e && e.route_requests_30d === 0 ? (
         <p className="empty-note">
-          No opted-in route requests yet. In WalkLah Go, walkers can turn on "Share anonymous route stats" in How WalkLah works.
+          No opted-in route requests in this area yet. In WalkLah Go, walkers can turn on "Share anonymous route stats" in How WalkLah works.
         </p>
       ) : null}
 
@@ -48,6 +49,12 @@ export function ExploreStage({ operatorKey, overview }: StageProps) {
             </span>
             <span className="tile__label">Shade on Enjoyable vs Shortest routes (daytime average)</span>
           </div>
+        </div>
+      )}
+
+      {trends && (
+        <div className="sparkline-row">
+          <Sparkline label="Route comparisons" values={trends.series.route_comparisons} weeks={trends.weeks} />
         </div>
       )}
 

@@ -282,11 +282,13 @@ export interface Issue {
 }
 
 export interface Overview {
-  survey: { coverage: Coverage; sources: string[]; built_at: string | null }
+  area: { west: number; south: number; east: number; north: number } | null
+  survey: { coverage: Coverage; audited_coverage: Coverage; sources: string[]; built_at: string | null }
   track: {
     reports_by_status: Partial<Record<ReportStatus, number>>
     total_reports: number
     operator_closures: number
+    community_confirmed: number
     still_there_votes: number
     cleared_votes: number
   }
@@ -319,14 +321,25 @@ export interface ScenarioResult {
   pairs_improved: number
   newly_connected: number
   total_saved_m: number
+  cost: { cost_rm: number; rm_per_metre_saved: number | null; metres_saved_per_rm_1000: number; source: string } | null
   rows: ScenarioRow[]
   assumptions: string[]
   evaluated_at: string
 }
 
 export type ScenarioRequest =
-  | { type: 'remove_barrier'; segment_id: string; label?: string }
-  | { type: 'add_link'; start: LatLon; end: LatLon; label?: string }
+  | { type: 'remove_barrier'; segment_id: string; label?: string; cost_rm?: number }
+  | { type: 'add_link'; start: LatLon; end: LatLon; label?: string; cost_rm?: number }
+
+export interface Trends {
+  weeks: string[]
+  series: { reports: number[]; resolved: number[]; route_comparisons: number[] }
+}
+
+export interface HeatResponse {
+  kind: 'reports' | 'trips'
+  points: (LatLon & { weight: number })[]
+}
 
 export interface BarrierCandidate extends LatLon {
   segment_id: string
@@ -349,6 +362,8 @@ export interface FeedbackRow {
   mode: RouteMode
   passable: 'yes' | 'partly' | 'no'
   note: string | null
+  cell_lat?: number | null
+  cell_lon?: number | null
 }
 
 export interface HealthResponse {

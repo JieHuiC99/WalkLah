@@ -4,6 +4,7 @@ import type {
   CreateReportBody,
   FeedbackRow,
   HealthResponse,
+  HeatResponse,
   InsightsSummary,
   Issue,
   NearSegment,
@@ -19,6 +20,7 @@ import type {
   ScenarioRequest,
   ScenarioResult,
   SegmentCard,
+  Trends,
   ValidationErrorItem,
   VerifyStatus,
 } from '../types'
@@ -178,10 +180,17 @@ export const getSegment = (id: string, at?: string) =>
     timeoutMs: ROUTE_TIMEOUT_MS,
   })
 
-export const sendFeedback = (mode: RouteMode, passable: 'yes' | 'partly' | 'no', note: string | null, device: string) =>
+/** near: roughly where the walk was (the server keeps only a ~1 km cell). */
+export const sendFeedback = (
+  mode: RouteMode,
+  passable: 'yes' | 'partly' | 'no',
+  note: string | null,
+  device: string,
+  near?: { latitude: number; longitude: number } | null,
+) =>
   request<{ mode: RouteMode; passable: string }>('/feedback', {
     method: 'POST',
-    body: json({ mode, passable, note, device }),
+    body: json({ mode, passable, note, device, latitude: near?.latitude ?? null, longitude: near?.longitude ?? null }),
   })
 
 export const getSummary = () => request<InsightsSummary>('/insights/summary')
@@ -189,10 +198,31 @@ export const getSummary = () => request<InsightsSummary>('/insights/summary')
 // ---- operators (WalkLah Insights) ---------------------------------------
 // The operator key is only sent when the server is configured with one (WALKLAH_OPERATOR_KEY).
 
-export const getOverview = (key: string) => request<Overview>('/insights/overview', { operatorKey: key })
+/** bbox = "west,south,east,north" limits a view to one area; null = everywhere. */
+const area = (bbox?: string | null) => (bbox ? `bbox=${encodeURIComponent(bbox)}` : '')
 
-export async function getIssues(key: string): Promise<{ issues: Issue[]; formula: string }> {
-  return request('/insights/issues', { operatorKey: key })
+export const getOverview = (key: string, bbox?: string | null) =>
+  request<Overview>(`/insights/overview?${area(bbox)}`, { operatorKey: key })
+
+export async function getIssues(key: string, bbox?: string | null): Promise<{ issues: Issue[]; formula: string }> {
+  return request(`/insights/issues?${area(bbox)}`, { operatorKey: key })
+}
+
+export const getHeat = (key: string, bbox: string | null, kind: 'reports' | 'trips') =>
+  request<HeatResponse>(`/insights/heat?kind=${kind}&${area(bbox)}`, { operatorKey: key })
+
+export const getTrends = (key: string, bbox?: string | null) =>
+  request<Trends>(`/insights/trends?${area(bbox)}`, { operatorKey: key })
+
+/** Saves the area's reports as a CSV file (fetched with the key header, then downloaded). */
+export async function downloadReportsCsv(key: string, bbox?: string | null): Promise<void> {
+  const text = await request<string>(`/insights/export.csv?${area(bbox)}`, { operatorKey: key, text: true })
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `walklah-reports-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export const verifyReport = (key: string, id: string, status: VerifyStatus, evidence?: string) =>
@@ -217,8 +247,9 @@ export const evaluateScenario = (key: string, body: ScenarioRequest) =>
     timeoutMs: ROUTE_TIMEOUT_MS,
   })
 
-export async function getBarrierCandidates(key: string): Promise<BarrierCandidate[]> {
-  return (await request<{ barriers: BarrierCandidate[] }>('/scenarios/candidates', { operatorKey: key })).barriers
+export async function getBarrierCandidates(key: string, bbox?: string | null): Promise<BarrierCandidate[]> {
+  return (await request<{ barriers: BarrierCandidate[] }>(`/scenarios/candidates?${area(bbox)}`, { operatorKey: key }))
+    .barriers
 }
 
 export async function getAudit(key: string): Promise<AuditRow[]> {
@@ -234,8 +265,8 @@ export const uploadAudit = (key: string, rows: AuditRow[]) =>
 
 export const auditTemplate = () => request<string>('/audit/template', { text: true })
 
-export async function getFeedback(key: string): Promise<FeedbackRow[]> {
-  return (await request<{ feedback: FeedbackRow[] }>('/insights/feedback', { operatorKey: key })).feedback
+export async function getFeedback(key: string, bbox?: string | null): Promise<FeedbackRow[]> {
+  return (await request<{ feedback: FeedbackRow[] }>(`/insights/feedback?${area(bbox)}`, { operatorKey: key })).feedback
 }
 
 export const clearAllReports = (key: string) =>

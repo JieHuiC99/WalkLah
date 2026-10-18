@@ -50,16 +50,35 @@ export function SurveyStage({ operatorKey, overview, refresh }: StageProps) {
   }, [operatorKey])
 
   const c = overview?.survey.coverage
+  const a = overview?.survey.audited_coverage
+  const national = c && c.lighting_tagged_pct !== undefined
   const tiles: [string, number | null | undefined, string][] = c
-    ? [
-        ['Sidewalk status known', c.sidewalk_known_pct, 'Dedicated footpaths or mapped sidewalks'],
-        ['Lighting known', c.lighting_known_pct, 'Team audit, OSM lit tags or lamps'],
-        ['Under tree canopy', c.canopy_pct, 'Meta/WRI 1 m canopy ≥ 3 m'],
-        ['Covered walkways', c.covered_pct, 'Roofs, shelters, covered ways'],
-        ['Real building heights', c.building_heights_real_pct, 'Others estimated at 9 m'],
-        ['Steps', c.steps_pct, 'Of path length'],
-      ]
+    ? national
+      ? [
+          ['Sidewalk status known', c.sidewalk_known_pct, 'Dedicated footpaths or mapped sidewalks (OSM)'],
+          ['Lighting tagged', c.lighting_tagged_pct, 'OSM lit tags; street lamps add more per area'],
+          ['Covered ways tagged', c.covered_tagged_pct, 'Covered, arcade, corridor or tunnel'],
+          ['Dedicated footpaths', c.dedicated_footpath_pct, 'Of all walkable path length'],
+          ['Real building heights', c.building_heights_real_pct, 'Others estimated at 9 m'],
+        ]
+      : [
+          ['Sidewalk status known', c.sidewalk_known_pct, 'Dedicated footpaths or mapped sidewalks'],
+          ['Lighting known', c.lighting_known_pct, 'Team audit, OSM lit tags or lamps'],
+          ['Under tree canopy', c.canopy_pct, 'Meta/WRI 1 m canopy ≥ 3 m'],
+          ['Covered walkways', c.covered_pct, 'Roofs, shelters, covered ways'],
+          ['Real building heights', c.building_heights_real_pct, 'Others estimated at 9 m'],
+          ['Steps', c.steps_pct, 'Of path length'],
+        ]
     : []
+  const auditedTiles: [string, number | null | undefined, string][] =
+    national && a
+      ? [
+          ['Lighting known', a.lighting_known_pct, 'Team audit, OSM lit tags or lamps'],
+          ['Under tree canopy', a.canopy_pct, 'Meta/WRI 1 m canopy ≥ 3 m'],
+          ['Covered walkways', a.covered_pct, 'Roofs, shelters, covered ways'],
+          ['Sidewalk status known', a.sidewalk_known_pct, 'Dedicated footpaths or mapped sidewalks'],
+        ]
+      : []
 
   const downloadTemplate = async () => {
     const text = await api.auditTemplate()
@@ -103,20 +122,24 @@ export function SurveyStage({ operatorKey, overview, refresh }: StageProps) {
         lead="What the walking map knows — and what still needs checking on foot."
       />
 
-      <div className="tile-grid">
-        {tiles.map(([label, value, hint]) => (
-          <div key={label} className={`tile${(value ?? 0) < 20 ? ' tile--low' : ''}`}>
-            <span className="tile__value">{value === null || value === undefined ? '—' : `${Math.round(value)}%`}</span>
-            <span className="tile__label">{label}</span>
-            <span className="tile__hint">{hint}</span>
-          </div>
-        ))}
-      </div>
+      {national && <h2 className="stage-subhead">Malaysia · OpenStreetMap</h2>}
+      <TileGrid tiles={tiles} />
       {c && (
         <p className="muted small">
-          {c.segments.toLocaleString('en-MY')} path segments · {c.network_km} km mapped · {c.buildings.toLocaleString('en-MY')}{' '}
-          buildings · {c.audited_segments ?? 0} segments audited by the team.
+          {c.segments.toLocaleString('en-MY')} path segments · {Math.round(c.network_km).toLocaleString('en-MY')} km mapped ·{' '}
+          {c.buildings.toLocaleString('en-MY')} buildings · {c.places.toLocaleString('en-MY')} places ·{' '}
+          {c.audited_segments ?? 0} segments audited by the team.
         </p>
+      )}
+      {auditedTiles.length > 0 && (
+        <>
+          <h2 className="stage-subhead">Team-audited area · Universiti Malaya</h2>
+          <TileGrid tiles={auditedTiles} />
+          <p className="muted small">
+            Tree canopy is measured everywhere at 10 m (ESA WorldCover) and at 1 m around UM (Meta/WRI). Audit more areas to
+            turn "unknown" into evidence.
+          </p>
+        </>
       )}
 
       <section className="card">
@@ -190,6 +213,20 @@ export function SurveyStage({ operatorKey, overview, refresh }: StageProps) {
         </ul>
         {overview?.survey.built_at && <p className="muted small">Layer built {overview.survey.built_at.slice(0, 10)}.</p>}
       </section>
+    </div>
+  )
+}
+
+function TileGrid({ tiles }: { tiles: [string, number | null | undefined, string][] }) {
+  return (
+    <div className="tile-grid">
+      {tiles.map(([label, value, hint]) => (
+        <div key={label} className={`tile${(value ?? 0) < 20 ? ' tile--low' : ''}`}>
+          <span className="tile__value">{value === null || value === undefined ? '—' : `${Math.round(value)}%`}</span>
+          <span className="tile__label">{label}</span>
+          <span className="tile__hint">{hint}</span>
+        </div>
+      ))}
     </div>
   )
 }

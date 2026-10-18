@@ -9,7 +9,7 @@ import { formatMetres } from '../../utils/format'
 import type { StageProps } from '../InsightsApp'
 import { StageHeader } from './StageHeader'
 
-export function PrioritiseStage({ operatorKey, reports, flyTo, startPick, pick, picked, clearPicked }: StageProps) {
+export function PrioritiseStage({ operatorKey, reports, bbox, flyTo, startPick, pick, picked, clearPicked, onScenario }: StageProps) {
   const [issues, setIssues] = useState<Issue[] | null>(null)
   const [formula, setFormula] = useState('')
   const [candidates, setCandidates] = useState<BarrierCandidate[]>([])
@@ -17,7 +17,7 @@ export function PrioritiseStage({ operatorKey, reports, flyTo, startPick, pick, 
   // Re-rank whenever the reports change.
   useEffect(() => {
     let cancelled = false
-    Promise.all([api.getIssues(operatorKey), api.getBarrierCandidates(operatorKey)]).then(
+    Promise.all([api.getIssues(operatorKey, bbox), api.getBarrierCandidates(operatorKey, bbox)]).then(
       ([ranked, barriers]) => {
         if (cancelled) return
         setIssues(ranked.issues)
@@ -29,7 +29,7 @@ export function PrioritiseStage({ operatorKey, reports, flyTo, startPick, pick, 
     return () => {
       cancelled = true
     }
-  }, [operatorKey, reports])
+  }, [operatorKey, reports, bbox])
 
   return (
     <div className="stage">
@@ -40,7 +40,7 @@ export function PrioritiseStage({ operatorKey, reports, flyTo, startPick, pick, 
         {issues === null ? (
           <p className="muted">Loading…</p>
         ) : issues.length === 0 ? (
-          <p className="empty-note">No open issues. Verified and pending reports are ranked here.</p>
+          <p className="empty-note">No open issues in this area. Verified and pending reports are ranked here.</p>
         ) : (
           <ol className="issue-list">
             {issues.map((issue, i) => (
@@ -83,6 +83,7 @@ export function PrioritiseStage({ operatorKey, reports, flyTo, startPick, pick, 
         }}
         onClearLink={clearPicked}
         flyTo={flyTo}
+        onResult={onScenario}
       />
     </div>
   )
@@ -97,6 +98,7 @@ function ScenarioTool({
   onPickLink,
   onClearLink,
   flyTo,
+  onResult,
 }: {
   operatorKey: string
   candidates: BarrierCandidate[]
@@ -106,10 +108,12 @@ function ScenarioTool({
   onPickLink: () => void
   onClearLink: () => void
   flyTo: StageProps['flyTo']
+  onResult: (result: ScenarioResult | null) => void
 }) {
   const [type, setType] = useState<'remove_barrier' | 'add_link'>('remove_barrier')
   const [barrier, setBarrier] = useState<string>('')
   const [label, setLabel] = useState('')
+  const [cost, setCost] = useState('')
   const [result, setResult] = useState<ScenarioResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
@@ -119,11 +123,15 @@ function ScenarioTool({
     setError(null)
     setRunning(true)
     try {
+      const costRm = Number(cost.replace(/[^0-9.]/g, ''))
+      const extra = { label: label || undefined, cost_rm: costRm > 0 ? costRm : undefined }
       const body =
         type === 'remove_barrier'
-          ? { type, segment_id: chosenBarrier, label: label || undefined }
-          : { type, start: start!, end: end!, label: label || undefined }
-      setResult(await api.evaluateScenario(operatorKey, body))
+          ? { type, segment_id: chosenBarrier, ...extra }
+          : { type, start: start!, end: end!, ...extra }
+      const next = await api.evaluateScenario(operatorKey, body)
+      setResult(next)
+      onResult(next)
     } catch (e) {
       setError(api.errorMessage(e))
     } finally {
@@ -135,11 +143,11 @@ function ScenarioTool({
   return (
     <section className="card scenario">
       <h2>
-        Intervention scenario <span className="hypo-tag">Hypothetical</span>
+        Intervention scenario <span className="hypo-tag">Planning only</span>
       </h2>
       <p className="muted small">
-        Test a fix on a copy of the walking network and see the distance saved between the station, bus stops and key
-        destinations. The live map never changes.
+        Test a fix on a copy of the walking network and see the distance saved between the stations, bus stops and
+        everyday destinations around it. The live map never changes.
       </p>
       <div className="segmented" role="radiogroup" aria-label="Scenario type">
         <button
@@ -198,6 +206,19 @@ function ScenarioTool({
         maxLength={80}
         onChange={(e) => setLabel(e.target.value)}
       />
+      <label className="cost-field">
+        <span className="muted small">Estimated cost of the works (optional)</span>
+        <span className="cost-field__input">
+          <span>RM</span>
+          <input
+            className="text-input"
+            inputMode="decimal"
+            placeholder="e.g. 45,000"
+            value={cost}
+            onChange={(e) => setCost(e.target.value)}
+          />
+        </span>
+      </label>
       <button type="button" className="btn btn--primary btn--small" disabled={!ready || running} onClick={() => void run()}>
         {running ? 'Calculating…' : 'Run scenario'}
       </button>
@@ -206,7 +227,7 @@ function ScenarioTool({
       {result && (
         <div className="scenario-result">
           <p className="hypo-banner">
-            <Icon name="info" size={16} /> Hypothetical — not built. {result.label}
+            <Icon name="info" size={16} /> Planning scenario — not built. {result.label}
             {result.link_length_m ? ` (${Math.round(result.link_length_m)} m)` : ''}
           </p>
           <div className="tile-grid tile-grid--three">
@@ -223,6 +244,22 @@ function ScenarioTool({
               <span className="tile__label">pairs newly connected</span>
             </div>
           </div>
+          {result.cost && (
+            <div className="tile-grid tile-grid--two">
+              <div className="tile">
+                <span className="tile__value">
+                  {result.cost.rm_per_metre_saved === null
+                    ? '—'
+                    : `RM ${result.cost.rm_per_metre_saved.toLocaleString('en-MY')}`}
+                </span>
+                <span className="tile__label">per metre of walking saved</span>
+              </div>
+              <div className="tile">
+                <span className="tile__value">{result.cost.metres_saved_per_rm_1000.toLocaleString('en-MY')} m</span>
+                <span className="tile__label">saved per RM 1,000 ({result.cost.source.toLowerCase()})</span>
+              </div>
+            </div>
+          )}
           {result.pairs_improved > 0 && (
             <table className="data-table">
               <thead>

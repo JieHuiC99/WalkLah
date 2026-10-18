@@ -340,8 +340,16 @@
   font-size: 1.75rem;
 }
 
+/* The language toggle sits top-right, so the script greeting moves beside the tagline. */
 .go-home .home-hero__script {
-  top: 36px;
+  top: auto;
+  bottom: 70px;
+  right: 18px;
+  font-size: 1.5rem;
+}
+
+.go-home .home-hero__tagline {
+  max-width: 64%;
 }
 
 .go-home__body {

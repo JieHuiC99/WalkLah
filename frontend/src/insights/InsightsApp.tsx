@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import * as api from '../api/walklahApi'
 import type { StepStage } from '../app/navigation'
 import { Icon } from '../components/icons'
-import { MapView, type FlyTarget } from '../components/MapView'
+import { MapView, type FlyTarget, type HeatPoint, type MapViewInfo } from '../components/MapView'
 import { StepRail } from '../components/StepRail'
-import type { LatLon, Overview, Pilot, Report } from '../types'
+import type { LatLon, Overview, Pilot, Report, ScenarioResult, Trends } from '../types'
+import { PrintReport } from './PrintReport'
 import { ExploreStage } from './stages/ExploreStage'
 import { PrioritiseStage } from './stages/PrioritiseStage'
 import { SurveyStage } from './stages/SurveyStage'
@@ -42,13 +43,26 @@ export type MapPick = { purpose: 'closure' } | { purpose: 'link-start' } | { pur
 export interface StageProps {
   operatorKey: string
   overview: Overview | null
+  /** Reports inside the selected area. */
   reports: Report[]
+  /** "west,south,east,north" of the selected area, or null for all of Malaysia. */
+  bbox: string | null
+  trends: Trends | null
   refresh: () => Promise<void>
   flyTo: (point: LatLon) => void
   startPick: (pick: MapPick | null) => void
   pick: MapPick | null
   picked: { closure: LatLon | null; linkStart: LatLon | null; linkEnd: LatLon | null }
   clearPicked: () => void
+  onScenario: (result: ScenarioResult | null) => void
+}
+
+type HeatKind = 'off' | 'reports' | 'trips'
+
+function inBox(bbox: string | null, p: LatLon): boolean {
+  if (!bbox) return true
+  const [w, s, e, n] = bbox.split(',').map(Number)
+  return p.latitude >= s && p.latitude <= n && p.longitude >= w && p.longitude <= e
 }
 
 export default function InsightsApp() {
@@ -56,12 +70,19 @@ export default function InsightsApp() {
   const [needKey, setNeedKey] = useState(false)
   const [stage, setStage] = useState<StepStage>(readStage)
   const [overview, setOverview] = useState<Overview | null>(null)
-  const [reports, setReports] = useState<Report[]>([])
+  const [allReports, setReports] = useState<Report[]>([])
+  const [trends, setTrends] = useState<Trends | null>(null)
   const [pilot, setPilot] = useState<Pilot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null)
   const [pick, setPick] = useState<MapPick | null>(null)
   const [picked, setPicked] = useState<StageProps['picked']>({ closure: null, linkStart: null, linkEnd: null })
+  const [view, setView] = useState<MapViewInfo | null>(null)
+  const [areaMode, setAreaMode] = useState<'view' | 'all'>('view')
+  const [heatKind, setHeatKind] = useState<HeatKind>('off')
+  const [heat, setHeat] = useState<HeatPoint[] | null>(null)
+  const [scenario, setScenario] = useState<ScenarioResult | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
@@ -70,40 +91,72 @@ export default function InsightsApp() {
     window.history.replaceState(null, '', `${window.location.pathname}?${p}`)
   }, [stage])
 
-  const refresh = useCallback(async () => {
-    try {
-      const [o, r] = await Promise.all([api.getOverview(key), api.getReports()])
-      setOverview(o)
-      setReports(r)
-      setError(null)
-    } catch (e) {
-      if (e instanceof api.ApiError && e.status === 401) {
-        forgetKey()
-        setNeedKey(true)
-      }
+  // The selected area follows the map (rounded so tiny pans don't refetch).
+  const bbox =
+    areaMode === 'view' && view ? view.bounds.map((v) => v.toFixed(3)).join(',') : null
+
+  const fail = useCallback((e: unknown) => {
+    if (e instanceof api.ApiError && e.status === 401) {
+      forgetKey()
+      setNeedKey(true)
+    } else {
       setError(api.errorMessage(e))
     }
-  }, [key])
+  }, [])
+
+  const refresh = useCallback(async () => {
+    try {
+      const [o, r, tr] = await Promise.all([api.getOverview(key, bbox), api.getReports(), api.getTrends(key, bbox)])
+      setOverview(o)
+      setReports(r)
+      setTrends(tr)
+      setError(null)
+    } catch (e) {
+      fail(e)
+    }
+  }, [key, bbox, fail])
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([api.getOverview(key), api.getReports(), api.getPilot()]).then(
-      ([o, r, p]) => {
+    Promise.all([api.getOverview(key, bbox), api.getReports(), api.getTrends(key, bbox)]).then(
+      ([o, r, tr]) => {
         if (cancelled) return
         setOverview(o)
         setReports(r)
-        setPilot(p)
+        setTrends(tr)
+        setError(null)
       },
-      (e: unknown) => {
-        if (cancelled) return
-        if (e instanceof api.ApiError && e.status === 401) setNeedKey(true)
-        else setError(api.errorMessage(e))
-      },
+      (e: unknown) => !cancelled && fail(e),
     )
     return () => {
       cancelled = true
     }
-  }, [key])
+  }, [key, bbox, fail])
+
+  useEffect(() => {
+    let cancelled = false
+    api.getPilot().then(
+      (p) => !cancelled && setPilot(p),
+      () => undefined,
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (heatKind === 'off') return
+    let cancelled = false
+    api.getHeat(key, bbox, heatKind).then(
+      (h) => !cancelled && setHeat(h.points),
+      (e: unknown) => !cancelled && fail(e),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [key, bbox, heatKind, allReports, fail])
+
+  const reports = useMemo(() => allReports.filter((r) => inBox(bbox, r)), [allReports, bbox])
 
   const onPick = useCallback(
     (point: LatLon) => {
@@ -120,7 +173,10 @@ export default function InsightsApp() {
     [pick],
   )
 
-  const pilotRing = useMemo(() => (pilot ? { anchor: pilot.anchor, radiusM: pilot.radius_m } : null), [pilot])
+  const auditedRing = useMemo(
+    () => (pilot ? { anchor: pilot.audited_area.anchor, radiusM: pilot.audited_area.radius_m } : null),
+    [pilot],
+  )
   const link = useMemo(
     () => (stage === 'P' && (picked.linkStart || picked.linkEnd) ? { start: picked.linkStart, end: picked.linkEnd } : null),
     [stage, picked.linkStart, picked.linkEnd],
@@ -144,12 +200,26 @@ export default function InsightsApp() {
     operatorKey: key,
     overview,
     reports,
+    bbox,
+    trends,
     refresh,
     flyTo: (point) => setFlyTarget({ ...point, key: Date.now() }),
     startPick: setPick,
     pick,
     picked,
     clearPicked: () => setPicked({ closure: null, linkStart: null, linkEnd: null }),
+    onScenario: setScenario,
+  }
+
+  const exportCsv = async () => {
+    setExporting(true)
+    try {
+      await api.downloadReportsCsv(key, bbox)
+    } catch (e) {
+      fail(e)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -170,6 +240,12 @@ export default function InsightsApp() {
           <StepRail current={stage} tone="dark" onSelect={setStage} />
         </div>
         <div className="insights__links">
+          <button type="button" className="btn btn--small btn--light" onClick={() => void exportCsv()} disabled={exporting}>
+            <Icon name="download" size={16} /> {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+          <button type="button" className="btn btn--small btn--light" onClick={() => window.print()}>
+            <Icon name="book" size={16} /> Print report
+          </button>
           <a href="./" className="btn btn--small btn--light">
             <Icon name="walk" size={16} /> WalkLah Go
           </a>
@@ -195,6 +271,33 @@ export default function InsightsApp() {
       )}
       <main className="insights__main">
         <section className="insights__panel" aria-label="Stage">
+          <div className="area-bar">
+            <div className="segmented segmented--two" role="radiogroup" aria-label="Area">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={areaMode === 'view'}
+                className={areaMode === 'view' ? 'is-active' : ''}
+                onClick={() => setAreaMode('view')}
+              >
+                This map area
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={areaMode === 'all'}
+                className={areaMode === 'all' ? 'is-active' : ''}
+                onClick={() => setAreaMode('all')}
+              >
+                All of Malaysia
+              </button>
+            </div>
+            <p className="muted small">
+              {areaMode === 'view'
+                ? 'Numbers below cover what the map shows. Pan or zoom to your township.'
+                : 'Numbers below cover every report and opted-in trip.'}
+            </p>
+          </div>
           {stage === 'S' && <SurveyStage {...stageProps} />}
           {stage === 'T' && <TrackStage {...stageProps} />}
           {stage === 'E' && <ExploreStage {...stageProps} />}
@@ -203,14 +306,30 @@ export default function InsightsApp() {
         <section className="insights__map" aria-label="Map">
           <MapView
             padding={padding}
-            reports={reports}
-            pilot={pilotRing}
+            reports={allReports}
+            pilot={auditedRing}
             picking={pick !== null}
             onPick={onPick}
             draft={draft}
             link={link}
             flyTarget={flyTarget}
+            onViewChange={setView}
+            heat={heatKind === 'off' ? null : heat}
           />
+          <div className="heat-toggle segmented" role="radiogroup" aria-label="Heatmap">
+            {(['off', 'reports', 'trips'] as HeatKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={heatKind === k}
+                className={heatKind === k ? 'is-active' : ''}
+                onClick={() => setHeatKind(k)}
+              >
+                {{ off: 'No heatmap', reports: 'Reports', trips: 'Trips hit' }[k]}
+              </button>
+            ))}
+          </div>
           {pick && (
             <div className="pick-banner insights__pick" role="status">
               <span>
@@ -227,6 +346,7 @@ export default function InsightsApp() {
           )}
         </section>
       </main>
+      <PrintReport overview={overview} trends={trends} scenario={scenario} bbox={bbox} />
     </div>
   )
 }
