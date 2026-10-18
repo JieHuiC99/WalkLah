@@ -47,7 +47,40 @@ CREATE TABLE IF NOT EXISTS confirmations (
     time TEXT NOT NULL,
     PRIMARY KEY (report_num, device)
 );
+-- Opt-in, anonymous route comparisons: no coordinates, only segment IDs that
+-- were blocked and report IDs that were warned about.
+CREATE TABLE IF NOT EXISTS route_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    time TEXT NOT NULL,
+    daylight INTEGER NOT NULL,
+    step_free INTEGER NOT NULL,
+    shortest_m REAL NOT NULL,
+    practical_m REAL,
+    enjoyable_m REAL,
+    shade_shortest_pct REAL,
+    shade_enjoyable_pct REAL,
+    blocked_segments TEXT NOT NULL,
+    warned_reports TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS route_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    time TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    passable TEXT NOT NULL,
+    note TEXT,
+    device TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS segment_audit (
+    segment_id TEXT PRIMARY KEY,
+    lit TEXT,
+    sidewalk TEXT,
+    checked_at TEXT NOT NULL,
+    auditor TEXT,
+    note TEXT
+);
 """
+
+LOG_RETENTION_DAYS = 30
 
 
 def now_iso(now: Optional[datetime] = None) -> str:
@@ -270,13 +303,83 @@ class ReportStore:
             "affected_segments": len(self.verified_segment_ids()),
         }
 
+    # ---- route statistics (opt-in) ------------------------------------
+
+    def log_route(self, entry: Dict) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO route_logs (time, daylight, step_free, shortest_m, practical_m, enjoyable_m,"
+                " shade_shortest_pct, shade_enjoyable_pct, blocked_segments, warned_reports)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (now_iso(), int(entry["daylight"]), int(entry["step_free"]), entry["shortest_m"],
+                 entry.get("practical_m"), entry.get("enjoyable_m"), entry.get("shade_shortest_pct"),
+                 entry.get("shade_enjoyable_pct"), ",".join(entry["blocked_segments"]),
+                 ",".join(entry["warned_reports"])),
+            )
+            cutoff = now_iso(datetime.now(timezone.utc) - timedelta(days=LOG_RETENTION_DAYS))
+            self._db.execute("DELETE FROM route_logs WHERE time < ?", (cutoff,))
+            self._db.execute("DELETE FROM route_feedback WHERE time < ?", (cutoff,))
+            self._db.commit()
+
+    def route_logs(self) -> List[Dict]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM route_logs ORDER BY id").fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["blocked_segments"] = [s for s in d["blocked_segments"].split(",") if s]
+                d["warned_reports"] = [s for s in d["warned_reports"].split(",") if s]
+                out.append(d)
+            return out
+
+    def add_feedback(self, mode: str, passable: str, note: Optional[str], device: str) -> Dict:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO route_feedback (time, mode, passable, note, device) VALUES (?,?,?,?,?)",
+                (now_iso(), mode, passable, note, device),
+            )
+            self._db.commit()
+            return {"mode": mode, "passable": passable}
+
+    def feedback(self) -> List[Dict]:
+        with self._lock:
+            return [dict(r) for r in self._db.execute(
+                "SELECT time, mode, passable, note FROM route_feedback ORDER BY id DESC").fetchall()]
+
+    # ---- survey audit (S) ---------------------------------------------
+
+    def save_audit(self, rows: List[Dict]) -> int:
+        with self._lock:
+            for row in rows:
+                self._db.execute(
+                    "INSERT INTO segment_audit (segment_id, lit, sidewalk, checked_at, auditor, note)"
+                    " VALUES (?,?,?,?,?,?) ON CONFLICT(segment_id) DO UPDATE SET lit=excluded.lit,"
+                    " sidewalk=excluded.sidewalk, checked_at=excluded.checked_at, auditor=excluded.auditor,"
+                    " note=excluded.note",
+                    (row["segment_id"], row.get("lit"), row.get("sidewalk"), row["checked_at"],
+                     row.get("auditor"), row.get("note")),
+                )
+            self._db.commit()
+            return len(rows)
+
+    def audit_rows(self) -> List[Dict]:
+        with self._lock:
+            return [dict(r) for r in self._db.execute("SELECT * FROM segment_audit ORDER BY segment_id").fetchall()]
+
     def clear(self) -> None:
-        """Remove all reports (demo reset)."""
+        """Remove all reports (demo reset). Route statistics, feedback and audits are kept."""
         with self._lock:
             self._db.executescript(
                 "DELETE FROM confirmations; DELETE FROM verification_events; DELETE FROM reports;"
                 " DELETE FROM sqlite_sequence WHERE name IN ('reports', 'verification_events');"
             )
+            self._db.commit()
+
+    def clear_all(self) -> None:
+        """Everything, including statistics and audits (tests)."""
+        with self._lock:
+            self.clear()
+            self._db.executescript("DELETE FROM route_logs; DELETE FROM route_feedback; DELETE FROM segment_audit;")
             self._db.commit()
 
 

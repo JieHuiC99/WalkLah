@@ -4,8 +4,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .conditions import CONDITIONS
 from .explore_api import create_explore_router
 from .graph_service import GraphService
+from .insights_api import create_insights_router
 from .report_store import store
 from .reports_api import active_blocked_segments, create_reports_router
 from .routing import DESTINATIONS, RoutingService
@@ -42,6 +44,10 @@ ROUTING_SERVICE = RoutingService(GRAPH_SERVICE)
 
 app.include_router(create_reports_router(GRAPH_SERVICE))
 app.include_router(create_explore_router(GRAPH_SERVICE))
+app.include_router(create_insights_router(GRAPH_SERVICE))
+
+# Team field audits (S · Survey) saved earlier override OSM-derived conditions.
+CONDITIONS.apply_audit(store.audit_rows())
 
 
 @app.get("/health", response_model=HealthResponse)

@@ -46,7 +46,7 @@ def test_places_pilot_and_segment_card():
     assert any(p["name"] == "Taman Tasik Varsiti" for p in found)
 
     pilot = client.get("/pilot").json()
-    assert pilot["radius_m"] == 800 and "lighting_known_pct" in pilot["coverage"]
+    assert pilot["radius_m"] == 1700 and "lighting_known_pct" in pilot["coverage"]
 
     near = client.get("/segments/near?lat=3.11916&lon=101.65565").json()["segments"]
     assert near and near[0]["distance_m"] < 5

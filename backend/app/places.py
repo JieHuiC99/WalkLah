@@ -9,9 +9,12 @@ from .conditions import COMFORT_DIR
 from .routing import DESTINATIONS
 
 # Proposal V2.0 pilot: transit first/last mile around one LRT station.
+# The proposal suggested 500-800 m "to be confirmed after data inspection"; on the
+# real network the UM campus core is 1.2-1.7 km walk from LRT Universiti, so the
+# pilot ring covers 1.7 km. Team to confirm.
 PILOT = {
     "anchor": {"id": "osm_w24375068", "name": "LRT Universiti (KJ19)", "latitude": 3.114548, "longitude": 101.661702},
-    "radius_m": 800,
+    "radius_m": 1700,
 }
 
 DESTINATION_CATEGORIES = {

@@ -114,6 +114,21 @@ class Conditions:
         self.load()
         return self.segments.get(sid)
 
+    def apply_audit(self, rows: List[Dict]) -> int:
+        """Team field-audit results override OSM-derived lighting/sidewalk values."""
+        self.load()
+        applied = 0
+        for row in rows:
+            seg = self.segments.get(row.get("segment_id", ""))
+            if seg is None:
+                continue
+            if row.get("lit") in ("yes", "no"):
+                seg.lit, seg.lit_source = row["lit"], "audit"
+            if row.get("sidewalk") in ("yes", "no", "footpath"):
+                seg.sidewalk = row["sidewalk"]
+            applied += 1
+        return applied
+
     def near(self, lat: float, lon: float, radius_m: float = 25.0, limit: int = 3) -> List[Dict]:
         """Candidate path segments around a point, nearest first (for report confirmation)."""
         self.load()

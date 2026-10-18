@@ -27,6 +27,29 @@ def parse_when(at: Optional[str]) -> datetime:
     return when if when.tzinfo else when.replace(tzinfo=MALAYSIA)
 
 
+def route_log_entry(result: dict) -> dict:
+    """Anonymous summary of one comparison: no coordinates, only IDs and distances."""
+    routes = {r["mode"]: r for r in result["routes"]}
+    shortest = routes["shortest"]
+    practical, enjoyable = routes.get("practical", {}), routes.get("enjoyable", {})
+
+    def shade(route):
+        return route.get("exposure", {}).get("shade_pct") if route.get("exposure") else None
+
+    warned = sorted({w["report_id"] for r in result["routes"] for w in r.get("warnings", [])})
+    return {
+        "daylight": result["sun"]["daylight"],
+        "step_free": result["step_free"],
+        "shortest_m": shortest["distance_m"],
+        "practical_m": practical.get("distance_m"),
+        "enjoyable_m": enjoyable.get("distance_m"),
+        "shade_shortest_pct": shade(shortest),
+        "shade_enjoyable_pct": shade(enjoyable),
+        "blocked_segments": practical.get("affected_segment_ids", []),
+        "warned_reports": warned,
+    }
+
+
 def create_explore_router(graph_service) -> APIRouter:
     router = APIRouter()
     planner = ComfortRouter(graph_service)
@@ -36,6 +59,7 @@ def create_explore_router(graph_service) -> APIRouter:
         start_lat: float, start_lon: float, end_lat: float, end_lon: float,
         at: Optional[str] = Query(default=None, description="ISO date-time; Malaysia time if no offset"),
         step_free: bool = False,
+        share_stats: bool = Query(default=False, description="Walker opted in to anonymous route statistics"),
     ):
         """Shortest, Practical and Enjoyable routes between any two points in the pilot map."""
         for lat, lon, label in ((start_lat, start_lon, "Start"), (end_lat, end_lon, "Destination")):
@@ -43,10 +67,13 @@ def create_explore_router(graph_service) -> APIRouter:
                 raise HTTPException(status_code=400, detail=f"{label} is outside the WalkLah map area.")
         pending = [r for r in store.list() if r["status"] == "pending"]
         try:
-            return planner.plan(start_lat, start_lon, end_lat, end_lon, parse_when(at),
-                                set(active_blocked_segments()), step_free, pending)
+            result = planner.plan(start_lat, start_lon, end_lat, end_lon, parse_when(at),
+                                  set(active_blocked_segments()), step_free, pending)
         except RouteRequestError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        if share_stats:
+            store.log_route(route_log_entry(result))
+        return result
 
     @router.get("/places")
     def places(q: str = ""):
