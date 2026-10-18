@@ -6,6 +6,7 @@ const CATEGORY_ICONS: Record<string, { icon: IconName; tint: string }> = {
   construction: { icon: 'crane', tint: 'amber' },
   missing_sidewalk: { icon: 'road', tint: 'grey' },
   inaccessible_crossing: { icon: 'crossing', tint: 'red' },
+  lighting_out: { icon: 'bulb', tint: 'amber' },
 }
 
 function categoryIcon(category: string) {

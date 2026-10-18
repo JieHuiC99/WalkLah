@@ -16,6 +16,7 @@ export const CATEGORIES: CategoryOption[] = [
   { value: 'construction', label: 'Construction', duration: 'temporary' },
   { value: 'missing_sidewalk', label: 'Missing sidewalk', duration: 'permanent' },
   { value: 'inaccessible_crossing', label: 'Inaccessible crossing', duration: 'permanent' },
+  { value: 'lighting_out', label: 'Lighting out', duration: 'temporary' },
   { value: 'other', label: 'Other', duration: 'either' },
 ]
 

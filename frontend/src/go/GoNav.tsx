@@ -1,22 +1,17 @@
-import type { Tab } from '../app/navigation'
-import { Icon, type IconName } from './icons'
+import { Icon, type IconName } from '../components/icons'
+import type { GoTab } from './types'
 
-const ITEMS: { tab: Tab; label: string; icon: IconName }[] = [
+const ITEMS: { tab: GoTab; label: string; icon: IconName }[] = [
   { tab: 'home', label: 'Home', icon: 'home' },
   { tab: 'explore', label: 'Explore', icon: 'route' },
   { tab: 'report', label: 'Report', icon: 'flag' },
   { tab: 'community', label: 'Community', icon: 'users' },
-  { tab: 'operator', label: 'Operator', icon: 'chart' },
 ]
 
-interface Props {
-  active: Tab
-  onChange: (tab: Tab) => void
-}
-
-export function BottomNav({ active, onChange }: Props) {
+/** Walker navigation only: no operator screens in WalkLah Go. */
+export function GoNav({ active, onChange }: { active: GoTab; onChange: (tab: GoTab) => void }) {
   return (
-    <nav className="bottom-nav" aria-label="Main">
+    <nav className="bottom-nav go-nav" aria-label="Main">
       {ITEMS.map((item) => (
         <button
           key={item.tab}

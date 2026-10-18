@@ -1,11 +1,10 @@
 import type { StepStage } from '../app/navigation'
-import { Icon } from './icons'
 
-const STAGES: { stage: StepStage; name: string }[] = [
-  { stage: 'S', name: 'Survey' },
-  { stage: 'T', name: 'Track' },
-  { stage: 'E', name: 'Explore' },
-  { stage: 'P', name: 'Prioritise' },
+const STAGES: { stage: StepStage; name: string; hint: string }[] = [
+  { stage: 'S', name: 'Survey', hint: 'Map data & audits' },
+  { stage: 'T', name: 'Track', hint: 'Reports & verification' },
+  { stage: 'E', name: 'Explore', hint: 'How routes are used' },
+  { stage: 'P', name: 'Prioritise', hint: 'What to fix first' },
 ]
 
 interface Props {
@@ -14,17 +13,17 @@ interface Props {
   onSelect?: (stage: StepStage) => void
 }
 
-/** The S.T.E.P. footprint rail: current stage in yellow, earlier stages marked with a footprint. */
+/** The S.T.E.P. pipeline as navigation for WalkLah Insights: one stage highlighted, all reachable. */
 export function StepRail({ current, tone = 'light', onSelect }: Props) {
-  const currentIndex = STAGES.findIndex((s) => s.stage === current)
   return (
-    <ol className={`step-rail step-rail--${tone}`} aria-label="S.T.E.P. framework">
-      {STAGES.map((s, index) => {
-        const state = index === currentIndex ? 'current' : index < currentIndex ? 'done' : 'todo'
+    <ol className={`step-rail step-rail--${tone}`} aria-label="S.T.E.P. stages">
+      {STAGES.map((s) => {
+        const state = s.stage === current ? 'current' : 'todo'
         const content = (
           <>
-            <span className="step-rail__dot">{state === 'done' ? <Icon name="shoe" size={14} /> : s.stage}</span>
+            <span className="step-rail__dot">{s.stage}</span>
             <span className="step-rail__name">{s.name}</span>
+            <span className="step-rail__hint">{s.hint}</span>
           </>
         )
         return (

@@ -4,6 +4,23 @@ import type { SVGProps } from 'react'
 // Kept inline so the app needs no icon package.
 
 const paths = {
+  sun: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+  moon: 'M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z',
+  bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z',
+  train: 'M7 3h10a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a2 2 0 0 1 2-2zM5 10h14M9 14h.01M15 14h.01M8 21l2-4M16 21l-2-4',
+  bus: 'M5 4h14v12H5zM5 11h14M8 19v-3M16 19v-3M8 14h.01M16 14h.01',
+  tree: 'M12 22v-6M12 2l6 8h-3l4 6H5l4-6H6l6-8z',
+  wheelchair: 'M11 4.5a1.5 1.5 0 1 0 0-.01M10 8l1 6h5l2 5M9 10a5 5 0 1 0 6 7',
+  book: 'M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2V5zM4 19a2 2 0 0 1 2-2h12',
+  coffee: 'M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9zM16 10h2a2 2 0 0 1 0 4h-2M8 3v3M12 3v3',
+  leaf: 'M5 19c0-8 6-14 15-14 0 9-6 15-14 15M5 19l8-8',
+  heart: 'M12 20s-8-4.5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6.5-8 11-8 11z',
+  upload: 'M12 16V4M7 9l5-5 5 5M4 20h16',
+  download: 'M12 4v12M7 11l5 5 5-5M4 20h16',
+  lock: 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
+  plus: 'M12 5v14M5 12h14',
+  thumbUp: 'M7 11v9H4v-9h3zM7 11l4-7a2 2 0 0 1 3 2l-1 4h5a2 2 0 0 1 2 2l-1.5 6a2 2 0 0 1-2 1.5H7',
+  arrowUp: 'M12 19V5M6 11l6-6 6 6',
   home: 'M4 11l8-7 8 7M6 10v10h4v-6h4v6h4V10',
   route: 'M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 17h7a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h7',
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
