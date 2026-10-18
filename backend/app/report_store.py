@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS route_logs (
     shade_shortest_pct REAL,
     shade_enjoyable_pct REAL,
     blocked_segments TEXT NOT NULL,
-    warned_reports TEXT NOT NULL
+    warned_reports TEXT NOT NULL,
+    cell_lat REAL,
+    cell_lon REAL
 );
 CREATE TABLE IF NOT EXISTS route_feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +78,9 @@ CREATE TABLE IF NOT EXISTS route_feedback (
     mode TEXT NOT NULL,
     passable TEXT NOT NULL,
     note TEXT,
-    device TEXT NOT NULL
+    device TEXT NOT NULL,
+    cell_lat REAL,
+    cell_lon REAL
 );
 CREATE TABLE IF NOT EXISTS segment_audit (
     segment_id TEXT PRIMARY KEY,
@@ -129,9 +133,13 @@ class ReportStore:
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(SCHEMA)
-        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(reports)")}
-        if "device" not in columns:  # databases created before device-based merging
-            self._db.execute("ALTER TABLE reports ADD COLUMN device TEXT")
+        # Columns added after the first release of the database file.
+        for table, column, kind in (("reports", "device", "TEXT"), ("route_logs", "cell_lat", "REAL"),
+                                    ("route_logs", "cell_lon", "REAL"), ("route_feedback", "cell_lat", "REAL"),
+                                    ("route_feedback", "cell_lon", "REAL")):
+            columns = {r["name"] for r in self._db.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         self._db.commit()
 
     # ---- helpers -------------------------------------------------------
@@ -371,12 +379,12 @@ class ReportStore:
         with self._lock:
             self._db.execute(
                 "INSERT INTO route_logs (time, daylight, step_free, shortest_m, practical_m, enjoyable_m,"
-                " shade_shortest_pct, shade_enjoyable_pct, blocked_segments, warned_reports)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (now_iso(), int(entry["daylight"]), int(entry["step_free"]), entry["shortest_m"],
+                " shade_shortest_pct, shade_enjoyable_pct, blocked_segments, warned_reports, cell_lat, cell_lon)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (entry.get("time") or now_iso(), int(entry["daylight"]), int(entry["step_free"]), entry["shortest_m"],
                  entry.get("practical_m"), entry.get("enjoyable_m"), entry.get("shade_shortest_pct"),
                  entry.get("shade_enjoyable_pct"), ",".join(entry["blocked_segments"]),
-                 ",".join(entry["warned_reports"])),
+                 ",".join(entry["warned_reports"]), entry.get("cell_lat"), entry.get("cell_lon")),
             )
             cutoff = now_iso(datetime.now(timezone.utc) - timedelta(days=LOG_RETENTION_DAYS))
             self._db.execute("DELETE FROM route_logs WHERE time < ?", (cutoff,))
@@ -394,11 +402,14 @@ class ReportStore:
                 out.append(d)
             return out
 
-    def add_feedback(self, mode: str, passable: str, note: Optional[str], device: str) -> Dict:
+    def add_feedback(self, mode: str, passable: str, note: Optional[str], device: str,
+                     cell_lat: Optional[float] = None, cell_lon: Optional[float] = None) -> Dict:
         with self._lock:
             self._db.execute(
-                "INSERT INTO route_feedback (time, mode, passable, note, device) VALUES (?,?,?,?,?)",
-                (now_iso(), mode, passable, note, device),
+                "INSERT INTO route_feedback (time, mode, passable, note, device, cell_lat, cell_lon)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (now_iso(), mode, passable, note, device,
+                 None if cell_lat is None else round(cell_lat, 2), None if cell_lon is None else round(cell_lon, 2)),
             )
             self._db.commit()
             return {"mode": mode, "passable": passable}
@@ -406,7 +417,18 @@ class ReportStore:
     def feedback(self) -> List[Dict]:
         with self._lock:
             return [dict(r) for r in self._db.execute(
-                "SELECT time, mode, passable, note FROM route_feedback ORDER BY id DESC").fetchall()]
+                "SELECT time, mode, passable, note, cell_lat, cell_lon FROM route_feedback ORDER BY id DESC").fetchall()]
+
+    def events(self, event_types: Optional[List[str]] = None) -> List[Dict]:
+        """Verification events with their report's position (for trends)."""
+        with self._lock:
+            sql = ("SELECT e.event_type, e.time, r.latitude, r.longitude FROM verification_events e"
+                   " JOIN reports r ON r.num = e.report_num")
+            args: list = []
+            if event_types:
+                sql += f" WHERE e.event_type IN ({','.join('?' * len(event_types))})"
+                args = list(event_types)
+            return [dict(r) for r in self._db.execute(sql, args).fetchall()]
 
     # ---- survey audit (S) ---------------------------------------------
 

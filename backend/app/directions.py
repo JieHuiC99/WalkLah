@@ -109,6 +109,7 @@ def build_steps(legs: List[Leg]) -> List[Dict]:
         length = sum(g.length for g in group)
         where = label(first)
         location = [first.coords[0][0], first.coords[0][1]]
+        heading = None
         if i == 0:
             heading = CARDINALS[int(((_start_bearing(first.coords) + 22.5) % 360) // 45)]
             text = f"Head {heading} on {where}"
@@ -127,11 +128,12 @@ def build_steps(legs: List[Leg]) -> List[Dict]:
                 else:
                     text = f"Turn {modifier} onto {where}"
         steps.append({"type": kind, "modifier": modifier, "instruction": text, "name": first.name,
+                      "way": None if first.name else where, "direction": heading,
                       "distance_m": round(length, 1), "at_m": round(first.start_m, 1), "location": location})
     last = legs[-1]
     end = last.coords[-1]
     steps.append({"type": "arrive", "modifier": None, "instruction": "Arrive at your destination", "name": None,
-                  "distance_m": 0.0, "at_m": round(last.start_m + last.length, 1), "location": [end[0], end[1]]})
+                  "way": None, "direction": None, "distance_m": 0.0, "at_m": round(last.start_m + last.length, 1), "location": [end[0], end[1]]})
     return steps
 
 
@@ -189,6 +191,8 @@ def build_alerts(legs: List[Leg], daylight: bool, rain: bool) -> List[Dict]:
                 continue
             seen_reports.add(report["id"])
             what = report["category"].replace("_", " ")
-            alerts.append(_alert("hazard", leg.start_m, f"Reported {what} (not verified)", leg))
+            alert = _alert("hazard", leg.start_m, f"Reported {what} (not verified)", leg)
+            alert["category"] = report["category"]
+            alerts.append(alert)
     alerts.sort(key=lambda a: a["at_m"])
     return alerts
