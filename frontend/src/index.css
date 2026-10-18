@@ -925,6 +925,266 @@ a {
   border: 1.5px solid var(--line);
 }
 
+/* ---------- Navigate (E · Explore) ---------- */
+
+.navigate {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.route-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.route-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.route-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px;
+  border: 2px solid var(--line);
+  border-radius: 18px;
+  background: var(--white);
+  color: var(--ink);
+  text-align: left;
+}
+
+.route-card__label {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.route-card__minutes {
+  font-family: var(--font-display);
+  font-size: 2.125rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.route-card__meta {
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+.route-card__delta {
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--kuning);
+}
+
+.route-card__select {
+  margin-top: 8px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.route-card--walklah {
+  background: var(--forest);
+  border-color: var(--forest);
+  color: var(--white);
+}
+
+.route-card--walklah .route-card__label {
+  color: var(--kuning);
+}
+
+.route-card--walklah .route-card__meta {
+  color: #cfe0d8;
+}
+
+.route-card.is-selected {
+  box-shadow: 0 0 0 3px var(--kuning);
+}
+
+.route-card--baseline.is-selected {
+  border-color: var(--forest);
+}
+
+.route-card--missing {
+  border-color: var(--red);
+  background: var(--red-soft);
+  color: var(--red-ink);
+  font-weight: 700;
+}
+
+.route-card--missing p {
+  margin-top: 4px;
+  font-size: 0.9375rem;
+}
+
+.route-card__badge {
+  position: absolute;
+  top: -12px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--kuning);
+  color: var(--forest);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.distance-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.distance-bar {
+  display: grid;
+  grid-template-columns: 64px 1fr 64px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.distance-bar__label {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.distance-bar--green .distance-bar__label {
+  color: var(--green-ink);
+}
+
+.distance-bar__track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--sand);
+  overflow: hidden;
+}
+
+.distance-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--faint);
+  transition: width 0.5s ease;
+}
+
+.distance-bar--green .distance-bar__fill {
+  background: var(--green-bright);
+}
+
+.distance-bar__value {
+  text-align: right;
+  font-weight: 800;
+}
+
+.route-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.route-status svg {
+  flex: none;
+}
+
+.route-status--clear {
+  background: var(--green-soft);
+  color: var(--green-ink);
+}
+
+.route-status--avoiding {
+  background: var(--red-soft);
+  color: var(--red-ink);
+}
+
+.loading-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--white);
+  border: 1.5px solid var(--line);
+  color: var(--green-ink);
+}
+
+.loading-card div {
+  display: flex;
+  flex-direction: column;
+}
+
+.loading-card span:not(.spinner) {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.empty-note {
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--white);
+  border: 1.5px dashed var(--line);
+  color: var(--muted);
+}
+
+.inline-error {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--red-soft);
+  color: var(--red-ink);
+  font-weight: 600;
+}
+
+.community-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 14px;
+  background: var(--sand);
+  text-align: left;
+}
+
+.community-strip__icon {
+  color: var(--green);
+}
+
+.community-strip__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.community-strip__text span {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.fine-print {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
 /* ---------- Cards and sheets ---------- */
 
 .info-card {

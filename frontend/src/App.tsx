@@ -6,7 +6,9 @@ import { BottomNav } from './components/BottomNav'
 import { MapView } from './components/MapView'
 import { ScreenHeader } from './components/ScreenHeader'
 import { SurveySheet } from './components/SurveySheet'
+import { useRoutes } from './hooks/useRoutes'
 import { HomePage } from './pages/HomePage'
+import { NavigatePage } from './pages/NavigatePage'
 import type { Destination, InsightsSummary, Report } from './types'
 
 const STAGE_TAB: Record<Exclude<StepStage, 'S'>, Tab> = { T: 'report', E: 'explore', P: 'operator' }
@@ -72,10 +74,23 @@ export default function App() {
     setTo(from)
   }, [from, to])
 
+  const routes = useRoutes(from, to, dataVersion, backend === 'online')
+  const [focus, setFocus] = useState<'baseline' | 'walklah'>('walklah')
+  const routePair = routes.status === 'ready' ? routes.routes : null
+
   return (
-    <div className={`shell shell--${tab}`} data-version={dataVersion}>
+    <div className={`shell shell--${tab}`}>
       <div className="map-area">
-        <MapView destinations={destinations} from={from} to={to} onOpenSurvey={() => setSurveyOpen(true)} />
+        <MapView
+          destinations={destinations}
+          from={from}
+          to={to}
+          baseline={routePair?.baseline?.geometry ?? null}
+          walklah={routePair?.walklah?.geometry ?? null}
+          focus={focus}
+          fitKey={routePair?.key ?? null}
+          onOpenSurvey={() => setSurveyOpen(true)}
+        />
       </div>
       <BackendStatus state={backend} message={backendMessage} onRetry={retry} />
 
@@ -93,7 +108,22 @@ export default function App() {
               onStage={goToStage}
             />
           )}
-          {tab === 'explore' && <ScreenHeader title="Route options" stage="E" onStage={goToStage} />}
+          {tab === 'explore' && (
+            <NavigatePage
+              destinations={destinations}
+              from={from}
+              to={to}
+              onFromChange={setFrom}
+              onToChange={setTo}
+              onSwap={swap}
+              routes={routes}
+              focus={focus}
+              onFocus={setFocus}
+              reportCount={reports.length}
+              onOpenCommunity={() => setTab('community')}
+              onStage={goToStage}
+            />
+          )}
           {tab === 'report' && <ScreenHeader title="Report an issue" stage="T" onStage={goToStage} />}
           {tab === 'community' && (
             <ScreenHeader title="Community updates" subtitle={`${reports.length} reports near Universiti Malaya`} stage="T" onStage={goToStage} />
