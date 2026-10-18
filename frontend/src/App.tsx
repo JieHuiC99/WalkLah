@@ -4,11 +4,11 @@ import { readUrlState, writeUrlState, type StepStage, type Tab } from './app/nav
 import { BackendStatus, type BackendState } from './components/BackendStatus'
 import { BottomNav } from './components/BottomNav'
 import { MapView, type FlyTarget, type LatLon } from './components/MapView'
-import { ScreenHeader } from './components/ScreenHeader'
 import { SurveySheet } from './components/SurveySheet'
 import { DEMO_OBSTACLE } from './config/demo'
 import { useRoutes } from './hooks/useRoutes'
 import { CommunityPage } from './pages/CommunityPage'
+import { DashboardPage } from './pages/DashboardPage'
 import { HomePage } from './pages/HomePage'
 import { NavigatePage } from './pages/NavigatePage'
 import { ReportPage } from './pages/ReportPage'
@@ -178,11 +178,16 @@ export default function App() {
             <CommunityPage reports={reports} onShowOnMap={flyTo} onReport={() => setTab('report')} onStage={goToStage} />
           )}
           {tab === 'operator' && (
-            <ScreenHeader
-              title="Operator view"
-              subtitle={summary ? `${summary.total_reports} reports · ${summary.active_obstacles} active obstacles` : undefined}
-              stage="P"
-              tone="dark"
+            <DashboardPage
+              summary={summary}
+              reports={reports}
+              destinations={destinations}
+              dataVersion={dataVersion}
+              onChanged={afterMutation}
+              onShowOnMap={(report) => {
+                setTab('explore')
+                flyTo(report)
+              }}
               onStage={goToStage}
             />
           )}
