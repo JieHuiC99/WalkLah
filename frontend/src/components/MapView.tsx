@@ -108,6 +108,7 @@ export function MapView(props: Props) {
     instance.on('style.load', () => {
       // Start the compact attribution collapsed (its "i" button opens it) so it doesn't cover the map.
       container.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show')
+      // Development only: lets in-browser checks inspect the rendered layers.
       if (import.meta.env.DEV) (window as unknown as { __walklahMap?: MapLibreMap }).__walklahMap = instance
       if (!usingFallback) {
         styleLoaded = true

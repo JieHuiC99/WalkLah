@@ -107,7 +107,7 @@ function ScenarioTool({
   onClearLink: () => void
   flyTo: StageProps['flyTo']
 }) {
-  const [type, setType] = useState<'remove_barrier' | 'add_link'>(candidates.length ? 'remove_barrier' : 'add_link')
+  const [type, setType] = useState<'remove_barrier' | 'add_link'>('remove_barrier')
   const [barrier, setBarrier] = useState<string>('')
   const [label, setLabel] = useState('')
   const [result, setResult] = useState<ScenarioResult | null>(null)

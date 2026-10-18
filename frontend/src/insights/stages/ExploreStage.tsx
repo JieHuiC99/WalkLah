@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import * as api from '../../api/walklahApi'
 import { Icon } from '../../components/icons'
 import type { FeedbackRow } from '../../types'
-import { formatRelative } from '../../utils/format'
+import { formatRelative, formatSigned } from '../../utils/format'
 import type { StageProps } from '../InsightsApp'
 import { StageHeader } from './StageHeader'
 
@@ -43,8 +43,10 @@ export function ExploreStage({ operatorKey, overview }: StageProps) {
             <span className="tile__label">Extra walking caused by barriers</span>
           </div>
           <div className="tile">
-            <span className="tile__value">{e.average_shade_gain_pct === null ? '—' : `+${Math.round(e.average_shade_gain_pct)}%`}</span>
-            <span className="tile__label">Shade gained by Enjoyable vs Shortest (daytime)</span>
+            <span className="tile__value">
+              {e.average_shade_gain_pct === null ? '—' : formatSigned(e.average_shade_gain_pct, 'pts')}
+            </span>
+            <span className="tile__label">Shade on Enjoyable vs Shortest routes (daytime average)</span>
           </div>
         </div>
       )}

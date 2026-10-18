@@ -48,9 +48,14 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
     api.nearSegments(point.latitude, point.longitude).then(
       (found) => {
         if (cancelled) return
-        const ambiguous = found.length > 1 && found[1].distance_m - found[0].distance_m < 10
-        setCandidates(ambiguous ? found : [])
-        setSegment(ambiguous ? found[0].segment_id : null)
+        // Only ask when nearby candidates are genuinely different paths (e.g. a road and the
+        // sidewalk beside it); a junction of similar footpaths is auto-snapped to the nearest.
+        const close = found.filter((c) => c.distance_m - found[0].distance_m < 10)
+        const kinds = new Set(close.map((c) => `${c.highway}|${c.name ?? ''}`))
+        const ambiguous = close.length > 1 && kinds.size > 1
+        const options = ambiguous ? close.filter((c, i, all) => all.findIndex((o) => `${o.highway}|${o.name ?? ''}` === `${c.highway}|${c.name ?? ''}`) === i) : []
+        setCandidates(options)
+        setSegment(ambiguous ? options[0].segment_id : null)
       },
       () => !cancelled && setCandidates([]),
     )
@@ -170,9 +175,10 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
                   onChange={() => setSegment(c.segment_id)}
                 />
                 <span>
-                  <strong>{c.name ?? HIGHWAY_LABELS[c.highway] ?? 'Path'}</strong>
+                  <strong>{HIGHWAY_LABELS[c.highway] ?? 'Path'}</strong>
                   <span>
-                    {HIGHWAY_LABELS[c.highway] ?? c.highway} · {Math.round(c.distance_m)} m away
+                    {c.name ? `${c.name} · ` : ''}
+                    {Math.round(c.distance_m)} m from your pin
                   </span>
                 </span>
               </label>
