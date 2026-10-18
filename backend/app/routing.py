@@ -5,7 +5,7 @@ import networkx as nx
 from .graph_service import GraphService
 
 
-# Demo places inside the Universiti Malaya map.
+# Sample places inside the Universiti Malaya map (v1 /destinations and /route).
 DESTINATIONS = [
     {
         "id": "start_1",
