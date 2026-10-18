@@ -167,14 +167,23 @@ def create_insights_router(graph_service) -> APIRouter:
 
     # ---- operator: hypothetical intervention scenario (P) --------------
 
+    cache: Dict[str, object] = {}
+
+    def base_walk_graph() -> nx.Graph:
+        """Undirected walking graph (shortest parallel edge), built once."""
+        if "graph" not in cache:
+            source = graph_service._ensure()
+            g = nx.Graph()
+            for u, v, data in source.edges(data=True):
+                length = float(data.get("length", 0))
+                if not g.has_edge(u, v) or length < g[u][v]["length"]:
+                    g.add_edge(u, v, length=length)
+            cache["graph"] = g
+        return cache["graph"]  # type: ignore[return-value]
+
     def walk_graph(blocked: List[str]) -> nx.Graph:
-        """Undirected walking graph with verified barriers removed (what walkers face today)."""
-        source = graph_service._ensure()
-        g = nx.Graph()
-        for u, v, data in source.edges(data=True):
-            length = float(data.get("length", 0))
-            if not g.has_edge(u, v) or length < g[u][v]["length"]:
-                g.add_edge(u, v, length=length)
+        """Walking graph with verified barriers removed (what walkers face today)."""
+        g = base_walk_graph().copy()
         for seg in blocked:
             a, b = parse_segment_id(seg)
             if g.has_edge(a, b):
@@ -233,17 +242,21 @@ def create_insights_router(graph_service) -> APIRouter:
             after.add_edge(a, b, length=link_m)
             description = f"Add a {link_m:.0f} m walkway"
 
-        places = scenario_places()
+        if "snapped" not in cache:
+            # Snap every key place once (nearest-node lookups are the slow part).
+            snapped = []
+            for place in scenario_places():
+                node, dist = graph_service.nearest_node_with_distance(place["latitude"], place["longitude"])
+                if dist <= MAX_SNAP_M:
+                    snapped.append((place, node))
+            cache["snapped"] = snapped
+        snapped = cache["snapped"]  # type: ignore[assignment]
         rows = []
-        for i, origin in enumerate(places):
-            o_node, o_dist = graph_service.nearest_node_with_distance(origin["latitude"], origin["longitude"])
-            if o_dist > MAX_SNAP_M:
-                continue
+        for i, (origin, o_node) in enumerate(snapped):
             dist_before = nx.single_source_dijkstra_path_length(before, o_node, weight="length")
             dist_after = nx.single_source_dijkstra_path_length(after, o_node, weight="length")
-            for dest in places[i + 1:]:
-                d_node, d_dist = graph_service.nearest_node_with_distance(dest["latitude"], dest["longitude"])
-                if d_dist > MAX_SNAP_M or d_node == o_node:
+            for dest, d_node in snapped[i + 1:]:
+                if d_node == o_node:
                     continue
                 b_m, a_m = dist_before.get(d_node), dist_after.get(d_node)
                 saved = None if (b_m is None or a_m is None) else round(b_m - a_m, 1)
