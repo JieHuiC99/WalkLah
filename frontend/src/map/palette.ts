@@ -9,7 +9,7 @@ const PAINT: Record<string, Record<string, unknown>> = {
   landuse_residential: { 'fill-color': '#ece6d6', 'fill-opacity': 0.6 },
   water: { 'fill-color': '#bfe3f2' },
   building: { 'fill-color': '#e6e0d0', 'fill-outline-color': '#dcd4c1' },
-  highway_path: { 'line-color': '#b8ad92', 'line-dasharray': [2, 1.5] },
+  highway_path: { 'line-color': '#d6ccb4', 'line-dasharray': [2, 1.5] },
   highway_minor: { 'line-color': '#ffffff' },
   highway_major_casing: { 'line-color': '#e3dccb' },
   highway_major_inner: { 'line-color': '#fdf3d3' },

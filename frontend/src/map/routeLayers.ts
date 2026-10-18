@@ -7,6 +7,7 @@ export const BASELINE_SOURCE = 'route-baseline'
 export const WALKLAH_SOURCE = 'route-walklah'
 
 const EMPTY: FeatureCollection<LineString> = { type: 'FeatureCollection', features: [] }
+const BASELINE_DOTS = '#5b6b63'
 
 export function lineCollection(geometry: LineStringGeometry | null | undefined): FeatureCollection<LineString> {
   if (!geometry || geometry.coordinates.length < 2) return EMPTY
@@ -18,14 +19,24 @@ export function ensureRouteLayers(map: MapLibreMap): void {
   if (!map.getSource(BASELINE_SOURCE)) map.addSource(BASELINE_SOURCE, { type: 'geojson', data: EMPTY })
   if (!map.getSource(WALKLAH_SOURCE)) map.addSource(WALKLAH_SOURCE, { type: 'geojson', data: EMPTY })
 
-  // Usual (baseline) path: grey dots, drawn underneath.
+  // Usual (baseline) path: dark dots on a white band, drawn underneath. The band keeps it
+  // distinct from the base map's dashed footpaths.
+  if (!map.getLayer('route-baseline-casing')) {
+    map.addLayer({
+      id: 'route-baseline-casing',
+      type: 'line',
+      source: BASELINE_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#ffffff', 'line-width': 10, 'line-opacity': 0.9 },
+    })
+  }
   if (!map.getLayer('route-baseline-line')) {
     map.addLayer({
       id: 'route-baseline-line',
       type: 'line',
       source: BASELINE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': COLORS.grey, 'line-width': 6, 'line-dasharray': [0, 2] },
+      paint: { 'line-color': BASELINE_DOTS, 'line-width': 6, 'line-dasharray': [0, 2] },
     })
   }
   // WalkLah route: dark casing, bright green line, white "footsteps" flowing on top.
@@ -72,7 +83,7 @@ export function setRouteFocus(map: MapLibreMap, focus: 'baseline' | 'walklah'): 
     map.setPaintProperty('route-walklah-flow', 'line-opacity', focus === 'walklah' ? 0.85 : 0)
   }
   if (map.getLayer('route-baseline-line')) {
-    map.setPaintProperty('route-baseline-line', 'line-color', focus === 'baseline' ? COLORS.forest : COLORS.grey)
+    map.setPaintProperty('route-baseline-line', 'line-color', focus === 'baseline' ? COLORS.forest : BASELINE_DOTS)
     map.setPaintProperty('route-baseline-line', 'line-width', focus === 'baseline' ? 8 : 6)
   }
 }

@@ -119,11 +119,13 @@ export function MapView(props: Props) {
       window.clearTimeout(timer)
       ensureRouteLayers(instance)
       ensureReportLayers(instance)
+      // Overlays only need the style, not every base tile: on slow wifi 'load' can take a long
+      // time, but routes, reports and markers should appear as soon as possible.
+      setMap(instance)
       setStyleVersion((v) => v + 1)
     })
     // Only a failure before the style has loaded triggers the fallback; later tile errors are ignored.
     instance.on('error', switchToFallback)
-    instance.once('load', () => setMap(instance))
 
     // Clicking a report opens its details; otherwise, in placement mode, the click places the pin.
     let popup: maplibregl.Popup | null = null

@@ -766,8 +766,8 @@ a {
 
 .home-hero__script {
   position: absolute;
-  top: 74px;
-  right: 18px;
+  top: 14px;
+  right: 20px;
   font-family: var(--font-script);
   font-size: 1.5rem;
   line-height: 0.95;
@@ -1339,7 +1339,7 @@ a {
 }
 
 .map-legend__line--usual {
-  border-top: 4px dotted var(--faint);
+  border-top: 4px dotted var(--muted);
 }
 
 .map-legend__line--walklah {

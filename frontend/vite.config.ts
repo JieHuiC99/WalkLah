@@ -7,6 +7,6 @@ export default defineConfig({
   plugins: [react()],
   server: { port: 5173, strictPort: true },
   preview: { port: 5173, strictPort: true },
-  // MapLibre GL alone is ~800 kB minified; that is expected for a map app.
-  build: { chunkSizeWarningLimit: 1200 },
+  // MapLibre GL makes up most of the ~1.3 MB main chunk (≈360 kB gzipped); expected for a map app.
+  build: { chunkSizeWarningLimit: 1500 },
 })
