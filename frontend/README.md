@@ -95,3 +95,5 @@ src/
 ```
 
 Map data © OpenStreetMap contributors (ODbL). Map tiles by OpenFreeMap / OpenMapTiles.
+Fonts: Plus Jakarta Sans and Caveat, self-hosted latin subsets in `public/fonts/` under the
+SIL Open Font License 1.1 (licence texts alongside the font files).

@@ -1,3 +1,21 @@
+/* Self-hosted fonts (SIL Open Font License 1.1; licences in public/fonts). Latin subset only,
+   so the app needs no font CDN at the venue. System fonts take over if a file fails to load. */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/plus-jakarta-sans-latin-400-800.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/caveat-latin-600.woff2') format('woff2');
+}
+
 /* WalkLah design tokens
    hutan (forest) green for structure, WalkLah green for routes and actions,
    kuning yellow for "you are here" states, warm cream surfaces. */
@@ -30,9 +48,9 @@
   --shadow: 0 2px 6px rgba(16, 35, 28, 0.1), 0 10px 28px rgba(16, 35, 28, 0.14);
   --shadow-sm: 0 1px 3px rgba(16, 35, 28, 0.12);
 
-  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-display: var(--font-ui);
-  --font-script: 'Segoe Print', 'Bradley Hand', cursive;
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-script: 'Caveat', 'Segoe Print', 'Bradley Hand', cursive;
   --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
   --panel-width: 400px;
@@ -326,6 +344,11 @@ a {
 .map-view__canvas {
   width: 100%;
   height: 100%;
+}
+
+/* MapLibre sets its own font on the map container; keep markers and popups on-brand. */
+.map-view .maplibregl-map {
+  font-family: var(--font-ui);
 }
 
 .map-fabs {
@@ -766,10 +789,11 @@ a {
 
 .home-hero__script {
   position: absolute;
-  top: 14px;
+  top: 12px;
   right: 20px;
   font-family: var(--font-script);
-  font-size: 1.5rem;
+  font-weight: 600;
+  font-size: 1.75rem;
   line-height: 0.95;
   color: var(--kuning);
   text-align: right;
