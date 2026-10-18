@@ -2,24 +2,32 @@ from pathlib import Path
 import osmnx as ox
 import networkx as nx
 import os
-from typing import Optional
+from typing import List, Optional, Tuple
 
-DEFAULT_CACHE = Path(__file__).resolve().parent.parent / "data" / "walklah.graphml"
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_CACHE = BACKEND_DIR / "data" / "walklah.graphml"
+# The graph committed with the repository; used when data/ has no local copy,
+# so a fresh clone never silently downloads a different OSM graph.
+COMMITTED_GRAPH = BACKEND_DIR / "tests" / "backend" / "data" / "walklah.graphml"
+
+
 class GraphService:
     def __init__(self, cache_path: str = str(DEFAULT_CACHE)):
         self.cache_path = cache_path
         self.graph = None
 
     def load_graph(self, refresh: bool = False) -> nx.MultiDiGraph:
-        """Load the pedestrian graph from cache or download it."""
-        if not refresh and os.path.exists(self.cache_path):
-            try:
-                self.graph = ox.load_graphml(self.cache_path)
-                return self.graph
-            except Exception as e:
-                print(f"Error loading cached graph: {e}")
+        """Load the pedestrian graph from cache, the committed copy, or download it."""
+        if not refresh:
+            for path in (self.cache_path, str(COMMITTED_GRAPH)):
+                if os.path.exists(path):
+                    try:
+                        self.graph = ox.load_graphml(path)
+                        return self.graph
+                    except Exception as e:
+                        print(f"Error loading cached graph {path}: {e}")
 
-        # Download the graph if cache doesn't exist or refresh is True
+        # Download the graph if no cache exists or refresh is True
         try:
             os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
             self.graph = ox.graph_from_point(
@@ -32,54 +40,55 @@ class GraphService:
         except Exception as e:
             raise Exception(f"Failed to download pedestrian graph: {e}")
 
-    def get_nearest_node(self, lat: float, lon: float, max_distance: float = 100) -> Optional[int]:
-        """Find the nearest walkable node to the given coordinates."""
+    def _ensure(self) -> nx.MultiDiGraph:
         if self.graph is None:
             self.load_graph()
+        return self.graph
 
+    def nearest_node_with_distance(self, lat: float, lon: float) -> Tuple[int, float]:
+        """Nearest walkable node and its distance in metres (no cap)."""
+        graph = self._ensure()
+        node = ox.distance.nearest_nodes(graph, lon, lat)
+        distance = ox.distance.great_circle(lat, lon, graph.nodes[node]["y"], graph.nodes[node]["x"])
+        return node, float(distance)
+
+    def get_nearest_node(self, lat: float, lon: float, max_distance: float = 100) -> Optional[int]:
+        """Find the nearest walkable node to the given coordinates."""
         try:
-            x, y = lon, lat
-            nearest_node = ox.distance.nearest_nodes(self.graph, x, y)
-            distance = ox.distance.great_circle(lat, lon, self.graph.nodes[nearest_node]['y'], self.graph.nodes[nearest_node]['x'])
-            if distance > max_distance:
-                return None
-            return nearest_node
+            node, distance = self.nearest_node_with_distance(lat, lon)
         except Exception as e:
             print(f"Error finding nearest node: {e}")
             return None
+        return node if distance <= max_distance else None
+
+    def edge_line(self, u: int, v: int) -> List[Tuple[float, float]]:
+        """[(lon, lat), ...] for the shortest parallel edge u→v, oriented from u to v."""
+        graph = self._ensure()
+        edge_data = graph.get_edge_data(u, v)
+        if not edge_data:
+            return [(graph.nodes[u]["x"], graph.nodes[u]["y"]), (graph.nodes[v]["x"], graph.nodes[v]["y"])]
+        edge = min(edge_data.values(), key=lambda d: float(d.get("length", float("inf"))))
+        geom = edge.get("geometry")
+        if geom is None:
+            return [(graph.nodes[u]["x"], graph.nodes[u]["y"]), (graph.nodes[v]["x"], graph.nodes[v]["y"])]
+        coords = list(geom.coords)
+        # Make sure the line runs from u to v.
+        ux, uy = graph.nodes[u]["x"], graph.nodes[u]["y"]
+        if (coords[0][0] - ux) ** 2 + (coords[0][1] - uy) ** 2 > (coords[-1][0] - ux) ** 2 + (coords[-1][1] - uy) ** 2:
+            coords.reverse()
+        return coords
 
     def get_route_geometry(self, route_nodes: list) -> dict:
-        """Generate GeoJSON geometry for a route."""
-        if self.graph is None:
-            self.load_graph()
-
-        coordinates = []
-        for i in range(len(route_nodes) - 1):
-            u = route_nodes[i]
-            v = route_nodes[i + 1]
-            edge_data = self.graph.get_edge_data(u, v)
-            if edge_data:
-                # Get the first edge if there are multiple
-                edge = next(iter(edge_data.values()))
-                geom = edge.get('geometry')
-                if geom is not None:
-                    coords = list(geom.coords)
-                    coordinates.extend(coords)
-                else:
-                    # Fallback to node coordinates if no geometry
-                    coordinates.append((self.graph.nodes[u]['x'], self.graph.nodes[u]['y']))
-            else:
-                # Fallback to node coordinates if no edge data
-                coordinates.append((self.graph.nodes[u]['x'], self.graph.nodes[u]['y']))
-
-        # Add the last node's coordinates
-        last_node = route_nodes[-1]
-        coordinates.append((self.graph.nodes[last_node]['x'], self.graph.nodes[last_node]['y']))
-
-        # Convert to [longitude, latitude] format
-        geo_coords = [[lon, lat] for lon, lat in coordinates]
-
+        """Generate GeoJSON geometry for a route (same parallel edge the distance uses)."""
+        self._ensure()
+        coordinates: List[Tuple[float, float]] = []
+        for u, v in zip(route_nodes, route_nodes[1:]):
+            line = self.edge_line(u, v)
+            coordinates.extend(line if not coordinates else line[1:])
+        if not coordinates:
+            node = route_nodes[-1]
+            coordinates = [(self.graph.nodes[node]["x"], self.graph.nodes[node]["y"])]
         return {
             "type": "LineString",
-            "coordinates": geo_coords
+            "coordinates": [[lon, lat] for lon, lat in coordinates],
         }

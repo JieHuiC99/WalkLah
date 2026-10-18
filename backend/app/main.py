@@ -1,12 +1,33 @@
-from fastapi import FastAPI, HTTPException
-from .schemas import HealthResponse, DestinationsResponse, RouteResponse, InsightsSummary
-from .graph_service import GraphService
-from .routing import RoutingService, DESTINATIONS
-from .report_store import store
-from .reports_api import create_reports_router, active_blocked_segments
+import logging
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from .graph_service import GraphService
+from .report_store import store
+from .reports_api import active_blocked_segments, create_reports_router
+from .routing import DESTINATIONS, RoutingService
+from .schemas import DestinationsResponse, HealthResponse, InsightsSummary, RouteResponse
+from .security import require_operator
+
+logger = logging.getLogger("walklah")
 
 app = FastAPI(title="WalkLah Backend")
+
+
+# Registered before CORS so it runs *inside* the CORS middleware: unexpected
+# errors then come back as {"detail": ...} JSON with CORS headers, instead of a
+# plain-text 500 that browsers report as a network failure.
+@app.middleware("http")
+async def json_errors(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -61,8 +82,9 @@ def get_insights_summary():
     """Return dashboard metrics from the same store the routing uses."""
     return store.summary()
 
-@app.post("/demo/reset")
+
+@app.post("/demo/reset", dependencies=[Depends(require_operator)])
 def demo_reset():
-    """Demo helper: clear all reports. Remove before any public deployment."""
+    """Demo helper: clear all reports. Operator key required."""
     store.clear()
     return {"status": "reset"}

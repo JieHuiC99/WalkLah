@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.main import app, ROUTING_SERVICE, GRAPH_SERVICE
 from app.report_store import store
 from app.routing import DESTINATIONS, segment_id
+from tests.conftest import OPERATOR
 
 client = TestClient(app)
 ROUTE = "/route?start_id=start_1&destination_id=destination_1&mode="
@@ -11,9 +12,9 @@ ROUTE = "/route?start_id=start_1&destination_id=destination_1&mode="
 
 @pytest.fixture(autouse=True)
 def clean_store():
-    store._reports.clear()
+    store.clear()
     yield
-    store._reports.clear()
+    store.clear()
 
 
 def find_detour_segment():
@@ -49,7 +50,7 @@ def test_full_obstacle_lifecycle():
     assert pending["affected_segment_ids"] == []
 
     # 2. Verified active -> walklah detours, baseline unchanged
-    v = client.patch(f"/reports/{rid}/verify", json={"status": "verified_active"})
+    v = client.patch(f"/reports/{rid}/verify", json={"status": "verified_active"}, headers=OPERATOR)
     assert v.status_code == 200
     detour = client.get(ROUTE + "walklah").json()
     assert detour["distance_m"] > baseline["distance_m"]
@@ -60,14 +61,17 @@ def test_full_obstacle_lifecycle():
     assert summary["active_obstacles"] == 1 and summary["affected_segments"] == 1
 
     # 3. Cleared -> route returns to the original
-    client.patch(f"/reports/{rid}/verify", json={"status": "verified_cleared"})
+    client.patch(f"/reports/{rid}/verify", json={"status": "verified_cleared"}, headers=OPERATOR)
     cleared = client.get(ROUTE + "walklah").json()
     assert cleared["distance_m"] == baseline["distance_m"]
     assert client.get("/insights/summary").json()["cleared_reports"] == 1
 
 
 def test_client_cannot_self_verify():
+    # Without the operator key nobody can verify.
     r = client.patch("/reports/nope/verify", json={"status": "verified_active"})
+    assert r.status_code == 401
+    r = client.patch("/reports/nope/verify", json={"status": "verified_active"}, headers=OPERATOR)
     assert r.status_code == 404
-    r = client.patch("/reports/nope/verify", json={"status": "pending"})
+    r = client.patch("/reports/nope/verify", json={"status": "pending"}, headers=OPERATOR)
     assert r.status_code == 422

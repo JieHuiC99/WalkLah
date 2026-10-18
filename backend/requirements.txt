@@ -1,7 +1,14 @@
-fastapi
-uvicorn[standard]
-networkx
-osmnx
-shapely
-pytest
-httpx
+# Tested with Python 3.14 (Windows). scikit-learn is required by OSMnx's
+# nearest_nodes on the unprojected graph; without it every /route returns 404.
+fastapi==0.143.3
+uvicorn[standard]==0.54.0
+networkx==3.7
+osmnx==2.1.1
+geopandas==1.2.0
+shapely==2.2.0
+numpy==2.5.4
+pandas==3.0.6
+pyproj==3.8.0
+scikit-learn==1.9.1
+pytest==9.1.1
+httpx==0.28.1

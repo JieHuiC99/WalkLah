@@ -6,6 +6,7 @@ from app.graph_service import GraphService
 from app.routing import RoutingService, DESTINATIONS, segment_id
 from app.report_store import ReportStore, store
 from app.main import app
+from tests.conftest import OPERATOR
 
 
 @pytest.fixture
@@ -145,7 +146,7 @@ def test_report_store():
 
 
 def test_api(client):
-    store._reports.clear()  # start from a clean report store
+    store.clear()  # start from a clean report store
 
     # Test GET /route
     response = client.get("/route?start_id=start_1&destination_id=destination_1&mode=baseline")
@@ -178,6 +179,7 @@ def test_api(client):
     response = client.patch(
         f"/reports/{report_id}/verify",
         json={"status": "verified_active"},
+        headers=OPERATOR,
     )
     assert response.status_code == 200
     assert response.json()["status"] == "verified_active"
@@ -186,6 +188,7 @@ def test_api(client):
     response = client.patch(
         f"/reports/{report_id}/verify",
         json={"status": "invalid"},
+        headers=OPERATOR,
     )
     assert response.status_code == 422
 
@@ -193,6 +196,7 @@ def test_api(client):
     response = client.patch(
         "/reports/unknown/verify",
         json={"status": "verified_active"},
+        headers=OPERATOR,
     )
     assert response.status_code == 404
 
