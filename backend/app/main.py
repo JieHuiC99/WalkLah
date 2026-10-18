@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .explore_api import create_explore_router
 from .graph_service import GraphService
 from .report_store import store
 from .reports_api import active_blocked_segments, create_reports_router
@@ -40,6 +41,7 @@ GRAPH_SERVICE = GraphService()
 ROUTING_SERVICE = RoutingService(GRAPH_SERVICE)
 
 app.include_router(create_reports_router(GRAPH_SERVICE))
+app.include_router(create_explore_router(GRAPH_SERVICE))
 
 
 @app.get("/health", response_model=HealthResponse)
