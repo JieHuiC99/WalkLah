@@ -66,7 +66,8 @@ class CanopySource:
         self._meta_loaded = False
         self._blocks: dict = {}
         self._failed: set = set()
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # protects the dicts and the Meta raster
+        self._block_locks: dict = {}  # one lock per 0.1° block, so different blocks download in parallel
 
     # -- Meta 1 m (UM clip) -------------------------------------------------
     def _meta_raster(self):
@@ -100,10 +101,23 @@ class CanopySource:
     # -- WorldCover 10 m ----------------------------------------------------
     def _block(self, bx: int, by: int) -> Optional[_Raster]:
         key = (bx, by)
-        if key in self._blocks:
-            return self._blocks[key]
-        if key in self._failed:
-            return None
+        with self._lock:
+            if key in self._blocks:
+                return self._blocks[key]
+            if key in self._failed:
+                return None
+            block_lock = self._block_locks.setdefault(key, threading.Lock())
+        with block_lock:
+            if key in self._blocks:  # another thread fetched it while we waited
+                return self._blocks[key]
+            raster = self._load_block(bx, by)
+            with self._lock:
+                if raster is None:
+                    self._failed.add(key)
+                self._blocks[key] = raster
+            return raster
+
+    def _load_block(self, bx: int, by: int) -> Optional[_Raster]:
         west, south = bx * BLOCK_DEG, by * BLOCK_DEG
         cache_dir = self.cache_dir or (data_dir() / "worldcover")
         cache = cache_dir / f"wc_{bx}_{by}.npz"
@@ -113,9 +127,6 @@ class CanopySource:
             raster = _Raster(z["data"], float(z["west"]), float(z["north"]), float(z["rx"]), float(z["ry"]))
         elif self.online:
             raster = self._fetch_block(west, south, cache)
-        if raster is None:
-            self._failed.add(key)
-        self._blocks[key] = raster
         return raster
 
     @staticmethod
@@ -148,35 +159,44 @@ class CanopySource:
         lon, lat = np.asarray(lon, float), np.asarray(lat, float)
         if not len(lon):
             return np.zeros(0, bool), None
+        mask = np.zeros(len(lon), dtype=bool)
+        covered = np.zeros(len(lon), dtype=bool)
+        sources = []
         with self._lock:
-            mask = np.zeros(len(lon), dtype=bool)
-            covered = np.zeros(len(lon), dtype=bool)
-            sources = []
             meta = self._meta_raster()
-            if meta is not None:
-                m, ok = meta(lon, lat)
-                if ok.any():
-                    mask[ok] = m[ok]
-                    covered |= ok
-                    sources.append(META_SOURCE)
-            rest = ~covered
-            if rest.any():
-                bx = np.floor(lon[rest] / BLOCK_DEG).astype(int)
-                by = np.floor(lat[rest] / BLOCK_DEG).astype(int)
-                idx = np.flatnonzero(rest)
-                for key in set(zip(bx.tolist(), by.tolist())):
-                    raster = self._block(*key)
-                    if raster is None:
-                        continue
-                    sel = idx[(bx == key[0]) & (by == key[1])]
-                    values, ok = raster.sample(lon[sel], lat[sel])
-                    mask[sel[ok]] = values[ok] > 0
-                    covered[sel[ok]] = True
-                    if WORLDCOVER_SOURCE not in sources:
-                        sources.append(WORLDCOVER_SOURCE)
-            if not covered.any():
-                return None, None
-            return mask, " + ".join(sources)
+        if meta is not None:
+            m, ok = meta(lon, lat)
+            if ok.any():
+                mask[ok] = m[ok]
+                covered |= ok
+                sources.append(META_SOURCE)
+        rest = ~covered
+        if rest.any():
+            bx = np.floor(lon[rest] / BLOCK_DEG).astype(int)
+            by = np.floor(lat[rest] / BLOCK_DEG).astype(int)
+            idx = np.flatnonzero(rest)
+            for key in set(zip(bx.tolist(), by.tolist())):
+                raster = self._block(*key)
+                if raster is None:
+                    continue
+                sel = idx[(bx == key[0]) & (by == key[1])]
+                values, ok = raster.sample(lon[sel], lat[sel])
+                mask[sel[ok]] = values[ok] > 0
+                covered[sel[ok]] = True
+                if WORLDCOVER_SOURCE not in sources:
+                    sources.append(WORLDCOVER_SOURCE)
+        if not covered.any():
+            return None, None
+        return mask, " + ".join(sources)
+
+    def prefetch(self, west: float, south: float, east: float, north: float) -> int:
+        """Download and cache every WorldCover block in a box (used by scripts/prefetch_canopy.py)."""
+        count = 0
+        for bx in range(int(np.floor(west / BLOCK_DEG)), int(np.floor(east / BLOCK_DEG)) + 1):
+            for by in range(int(np.floor(south / BLOCK_DEG)), int(np.floor(north / BLOCK_DEG)) + 1):
+                if self._block(bx, by) is not None:
+                    count += 1
+        return count
 
 
 CANOPY = CanopySource()

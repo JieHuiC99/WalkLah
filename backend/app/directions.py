@@ -87,8 +87,11 @@ def _same_way(a: Leg, b: Leg, angle: float) -> bool:
     if a.name and b.name:
         return a.name == b.name and abs(angle) < 60
     if not a.name and not b.name:
-        return label(a) == label(b) and abs(angle) < 25
+        return label(a) == label(b) and abs(angle) < 40
     return False
+
+
+MIN_STEP_M = 12.0  # shorter stretches (a kerb, a junction) join the stretch before them
 
 
 def build_steps(legs: List[Leg]) -> List[Dict]:
@@ -100,14 +103,22 @@ def build_steps(legs: List[Leg]) -> List[Dict]:
         angle = ((_start_bearing(leg.coords) - _end_bearing(prev.coords) + 540) % 360) - 180
         if _same_way(groups[-1][-1], leg, angle):
             groups[-1].append(leg)
+        elif len(groups) > 1 and sum(g.length for g in groups[-1]) < MIN_STEP_M and not groups[-1][0].steps:
+            # The previous stretch was only a few metres: fold it into this one.
+            tiny = groups.pop()
+            turns.pop()
+            prev_end = groups[-1][-1]
+            turns.append(((_start_bearing(tiny[0].coords) - _end_bearing(prev_end.coords) + 540) % 360) - 180)
+            groups.append(tiny + [leg])
         else:
             groups.append([leg])
             turns.append(angle)
     steps = []
     for i, group in enumerate(groups):
         first = group[0]
+        main = max(group, key=lambda g: g.length)  # the stretch that names this step
         length = sum(g.length for g in group)
-        where = label(first)
+        where = label(main)
         location = [first.coords[0][0], first.coords[0][1]]
         heading = None
         if i == 0:
@@ -127,8 +138,8 @@ def build_steps(legs: List[Leg]) -> List[Dict]:
                     text = f"Keep {modifier.split()[1]} onto {where}"
                 else:
                     text = f"Turn {modifier} onto {where}"
-        steps.append({"type": kind, "modifier": modifier, "instruction": text, "name": first.name,
-                      "way": None if first.name else where, "direction": heading,
+        steps.append({"type": kind, "modifier": modifier, "instruction": text, "name": main.name,
+                      "way": None if main.name else where, "direction": heading,
                       "distance_m": round(length, 1), "at_m": round(first.start_m, 1), "location": location})
     last = legs[-1]
     end = last.coords[-1]

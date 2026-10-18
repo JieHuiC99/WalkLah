@@ -24,6 +24,13 @@ def tokens(text: str) -> List[str]:
     return re.findall(r"[0-9a-z]+", fold(text).replace("'", ""))
 
 
+def with_codes(text: str) -> str:
+    """Adds joined station/section codes ('BK 5' -> 'bk5') so they match what people type."""
+    words = tokens(text)
+    codes = [a + b for a, b in zip(words, words[1:]) if a.isalpha() and len(a) <= 4 and b.isdigit()]
+    return " ".join(words + codes)
+
+
 def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     mx = 111_320 * math.cos(math.radians((lat1 + lat2) / 2))
     return math.hypot((lon2 - lon1) * mx, (lat2 - lat1) * 110_540)
@@ -77,10 +84,18 @@ class PlaceIndex:
             if r["id"] not in seen:
                 rows.append(r)
 
+        def covers(text: str) -> bool:
+            have = set(tokens(text))
+            return all(any(h.startswith(w) for h in have) for w in words)
+
         def score(r) -> float:
-            name_words = set(tokens(f"{r['name']} {r['brand'] or ''} {r['alias'] or ''}"))
-            in_name = all(any(nw.startswith(w) for nw in name_words) for w in words)
-            s = 0.0 if in_name else 1.0
+            # All words in the name first, then via brand or aliases, then matches on the area only.
+            if covers(with_codes(r["name"])):
+                s = 0.0
+            elif covers(f"{r['name']} {r['brand'] or ''} {r['alias'] or ''}"):
+                s = 0.4
+            else:
+                s = 1.0
             if not fold(r["name"]).startswith(words[0]):
                 s += 0.15
             s -= {"rail_station": 0.6, "station_entrance": 0.2}.get(r["kind"], 0.0)
@@ -88,7 +103,7 @@ class PlaceIndex:
                 s += 0.05
             if lat is not None and lon is not None:
                 s += 0.9 * math.log10(1 + _distance_m(lat, lon, r["lat"], r["lon"]) / 1000)
-            return s + 0.02 * float(r["rank"])
+            return s + 0.005 * float(r["rank"])
 
         rows.sort(key=score)
         out, keys = [], set()

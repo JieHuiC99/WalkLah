@@ -69,6 +69,12 @@ def fold(text: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", (text or "").casefold()) if not unicodedata.combining(c))
 
 
+def joined_codes(text: str) -> list[str]:
+    """'BK 5' -> 'bk5', 'SS 15' -> 'ss15': people type station and section codes without the space."""
+    tokens = re.findall(r"[0-9a-z]+", fold(text))
+    return [a + b for a, b in zip(tokens, tokens[1:]) if a.isalpha() and len(a) <= 4 and b.isdigit()]
+
+
 def alias_for(name: str, brand: str | None, tags_text: str = "") -> str:
     words = []
     for value in (name, brand):
@@ -80,8 +86,26 @@ def alias_for(name: str, brand: str | None, tags_text: str = "") -> str:
         squashed = re.sub(r"[^0-9a-z ]", "", key)
         if squashed != key:
             words.append(squashed)
+        words.extend(joined_codes(value))
     words.append(tags_text)
     return " ".join(w for w in words if w).strip()
+
+
+def refresh_aliases(path: Path) -> None:
+    """Recompute search aliases on an existing database (no OSM re-read) and rebuild the search index."""
+    conn = sqlite3.connect(str(path))
+    rows = conn.execute("SELECT id, name, brand, alias FROM places").fetchall()
+    updates = []
+    for pid, name, brand, alias in rows:
+        extra = alias_for(name, brand)
+        merged = " ".join(dict.fromkeys(f"{alias or ''} {extra}".split()))
+        if merged != (alias or ""):
+            updates.append((merged, pid))
+    conn.executemany("UPDATE places SET alias = ? WHERE id = ?", updates)
+    conn.execute("INSERT INTO places_fts(places_fts) VALUES ('rebuild')")
+    conn.commit()
+    conn.close()
+    print(f"Updated {len(updates):,} of {len(rows):,} place aliases; search index rebuilt.")
 
 
 def line_length_m(coords: list[tuple[float, float]]) -> float:
@@ -444,7 +468,9 @@ def coverage(conn: sqlite3.Connection) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pbf", required=True)
+    parser.add_argument("--pbf")
+    parser.add_argument("--refresh-aliases", action="store_true",
+                        help="only recompute search aliases on an existing database")
     parser.add_argument("--out", default=None)
     parser.add_argument("--overture", action="store_true")
     parser.add_argument("--overture-min-confidence", type=float, default=0.6)
@@ -452,6 +478,11 @@ def main() -> None:
     args = parser.parse_args()
 
     out_dir = Path(args.out) if args.out else region_db.data_dir()
+    if args.refresh_aliases:
+        refresh_aliases(out_dir / region_db.DB_NAME)
+        return
+    if not args.pbf:
+        parser.error("--pbf is required to build the database")
     out_dir.mkdir(parents=True, exist_ok=True)
     final = out_dir / region_db.DB_NAME
     tmp = out_dir / (region_db.DB_NAME + ".building")

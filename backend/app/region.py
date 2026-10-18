@@ -13,6 +13,7 @@ import logging
 import math
 import threading
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 import networkx as nx
@@ -42,6 +43,7 @@ MIN_CORRIDOR_M = 800.0
 CORRIDOR_SHARE = 0.3
 TILE_CACHE = 400
 REGION_CACHE = 6
+BUILD_WORKERS = 4
 
 _TRANSFORMERS: Dict[str, Transformer] = {}
 
@@ -79,16 +81,25 @@ def _project_geoms(geoms: np.ndarray, transformer: Transformer) -> np.ndarray:
     return shapely.transform(geoms, fn)
 
 
-def _sample_line(xy: np.ndarray, ll: np.ndarray, step: float):
-    seg = np.hypot(np.diff(xy[:, 0]), np.diff(xy[:, 1]))
-    cum = np.concatenate([[0.0], np.cumsum(seg)])
-    total = cum[-1]
-    n = max(2, int(math.ceil(total / step)) + 1)
-    d = np.linspace(0.0, total, n)
-    if total <= 0:
-        return np.repeat(xy[:1], n, axis=0), np.repeat(ll[:1], n, axis=0)
-    return (np.column_stack([np.interp(d, cum, xy[:, 0]), np.interp(d, cum, xy[:, 1])]),
-            np.column_stack([np.interp(d, cum, ll[:, 0]), np.interp(d, cum, ll[:, 1])]))
+def sample_lines(xy: np.ndarray, ll: np.ndarray, starts: np.ndarray, step: float):
+    """Points every `step` metres along many lines at once.
+
+    xy/ll: all vertices of all lines, concatenated; starts: index of each line's first vertex
+    (plus a final end index). Returns sample xy, sample lon/lat and samples per line.
+    """
+    n_lines = len(starts) - 1
+    d = np.hypot(np.diff(xy[:, 0]), np.diff(xy[:, 1]))
+    d[starts[1:-1] - 1] = 1e-9  # no distance across the gap between two lines
+    cum = np.concatenate([[0.0], np.cumsum(d)])
+    line_start = cum[starts[:-1]]
+    totals = cum[starts[1:] - 1] - line_start
+    counts = np.maximum(2, np.ceil(totals / step).astype(int) + 1)
+    owner = np.repeat(np.arange(n_lines), counts)
+    k = np.arange(len(owner)) - np.repeat(np.cumsum(counts) - counts, counts)
+    at = line_start[owner] + k * (totals[owner] / (counts[owner] - 1))
+    sxy = np.column_stack([np.interp(at, cum, xy[:, 0]), np.interp(at, cum, xy[:, 1])])
+    sll = np.column_stack([np.interp(at, cum, ll[:, 0]), np.interp(at, cum, ll[:, 1])])
+    return sxy, sll, counts
 
 
 class Tile:
@@ -128,17 +139,8 @@ class Tile:
         ax, ay = tr.transform(all_ll[:, 0], all_ll[:, 1])
         all_xy = np.column_stack([ax, ay])
         bounds = np.cumsum([0] + [len(best[s][1]) for s in sids])
-        sample_xy, sample_ll, owner = [], [], []
-        for i, sid in enumerate(sids):
-            xy = all_xy[bounds[i]:bounds[i + 1]]
-            ll = all_ll[bounds[i]:bounds[i + 1]]
-            sxy, sll = _sample_line(xy, ll, SAMPLE_STEP_M)
-            sample_xy.append(sxy)
-            sample_ll.append(sll)
-            owner.append(np.full(len(sxy), i, dtype=np.int32))
-        sxy = np.vstack(sample_xy)
-        sll = np.vstack(sample_ll)
-        own = np.concatenate(owner)
+        sxy, sll, counts = sample_lines(all_xy, all_ll, bounds, SAMPLE_STEP_M)
+        sample_bounds = np.concatenate([[0], np.cumsum(counts)])
         flags = np.zeros(len(sxy), dtype=np.int64)
         pts = shapely.points(sxy[:, 0], sxy[:, 1])
 
@@ -159,23 +161,25 @@ class Tile:
         if under is not None:
             flags[under] |= CANOPY_FLAG
 
+        # Street lamps: one query for every line in the tile.
+        near_lamp = np.zeros(len(sids), dtype=bool)
         lamps = db.points_in("lamp", *box)
-        lamp_tree = None
         if lamps:
             lx, ly = tr.transform([p["lon"] for p in lamps], [p["lat"] for p in lamps])
-            lamp_tree = STRtree(shapely.points(lx, ly))
+            vertex_owner = np.repeat(np.arange(len(sids)), np.diff(bounds))
+            lines = shapely.linestrings(all_xy, indices=vertex_owner)
+            hit, _ = STRtree(shapely.points(lx, ly)).query(lines, predicate="dwithin", distance=LAMP_RADIUS_M)
+            near_lamp[np.unique(hit)] = True
 
         for i, sid in enumerate(sids):
             row, coords = best[sid]
-            mask = own == i
-            seg_flags = flags[mask]
+            lo, hi = sample_bounds[i], sample_bounds[i + 1]
+            seg_flags = flags[lo:hi]
             if row["covered"]:
                 seg_flags = seg_flags | COVERED
-            xy = all_xy[bounds[i]:bounds[i + 1]]
             lit, lit_src = row["lit"], ("osm_tag" if row["lit"] != "unknown" else None)
-            if lit == "unknown" and lamp_tree is not None and len(xy) >= 2:
-                if len(lamp_tree.query(shapely.linestrings(xy), predicate="dwithin", distance=LAMP_RADIUS_M)):
-                    lit, lit_src = "yes", "osm_lamp"
+            if lit == "unknown" and near_lamp[i]:
+                lit, lit_src = "yes", "osm_lamp"
             sidewalk = row["sidewalk"]
             if sid in audit:
                 a = audit[sid]
@@ -188,7 +192,7 @@ class Tile:
                 id=sid, highway=row["highway"], length=float(row["length"]), name=row["name"],
                 sidewalk=sidewalk, steps=row["highway"] == "steps", stress=stress_of(row["highway"]),
                 lit=lit, lit_source=lit_src, crossings=node_crossings,
-                xs=sxy[mask, 0], ys=sxy[mask, 1], flags=seg_flags.astype(int),
+                xs=sxy[lo:hi, 0], ys=sxy[lo:hi, 1], flags=seg_flags.astype(int),
             )
             self.edges[sid] = {"u": int(row["u"]), "v": int(row["v"]), "length": float(row["length"]),
                                "coords": coords}
@@ -205,7 +209,7 @@ class Region:
         canopy_sources = set()
         for tile in tiles:
             if tile.canopy_source:
-                canopy_sources.add(tile.canopy_source)
+                canopy_sources.update(tile.canopy_source.split(" + "))
             for sid, seg in tile.segments.items():
                 if sid not in segments or seg.length < segments[sid].length:
                     segments[sid] = seg
@@ -303,25 +307,39 @@ class RegionService:
 
     # -- tiles and regions ------------------------------------------------
     def tile(self, key: Tuple[int, int], crs: str) -> Tile:
+        return self.tiles([key], crs)[0]
+
+    def tiles(self, keys: List[Tuple[int, int]], crs: str) -> List[Tile]:
+        """Cached tiles; missing ones are built in parallel (database reads and canopy downloads overlap)."""
         with self._lock:
-            cache_key = (key, crs)
-            if cache_key in self._tiles:
-                self._tiles.move_to_end(cache_key)
-                return self._tiles[cache_key]
-            tile = Tile(key, crs, self.db, self.canopy, self.audit)
-            self._tiles[cache_key] = tile
+            missing = [k for k in keys if (k, crs) not in self._tiles]
+        if missing:
+            if len(missing) == 1:
+                built = [Tile(missing[0], crs, self.db, self.canopy, self.audit)]
+            else:
+                with ThreadPoolExecutor(max_workers=min(BUILD_WORKERS, len(missing))) as pool:
+                    built = list(pool.map(lambda k: Tile(k, crs, self.db, self.canopy, self.audit), missing))
+            with self._lock:
+                for tile in built:
+                    self._tiles.setdefault((tile.key, crs), tile)
+        with self._lock:
+            out = []
+            for k in keys:
+                self._tiles.move_to_end((k, crs))
+                out.append(self._tiles[(k, crs)])
             while len(self._tiles) > TILE_CACHE:
                 self._tiles.popitem(last=False)
-            return tile
+            return out
 
     def region(self, keys: Iterable[Tuple[int, int]], crs: str) -> Region:
         keys = frozenset(keys)
+        cache_key = (keys, crs)
         with self._lock:
-            cache_key = (keys, crs)
             if cache_key in self._regions:
                 self._regions.move_to_end(cache_key)
                 return self._regions[cache_key]
-            region = Region([self.tile(k, crs) for k in sorted(keys)], crs, self.db)
+        region = Region(self.tiles(sorted(keys), crs), crs, self.db)
+        with self._lock:
             self._regions[cache_key] = region
             while len(self._regions) > REGION_CACHE:
                 self._regions.popitem(last=False)
