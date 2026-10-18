@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api/walklahApi'
 import { BackendStatus, type BackendState } from '../components/BackendStatus'
-import { MapView, type FlyTarget, type PinMarker } from '../components/MapView'
+import { MapView, type FlyTarget, type MapViewInfo, type PinMarker, type UserLocation } from '../components/MapView'
+import { isInsideDataBounds, MAP_CENTER } from '../config/map'
 import type { RouteDisplay } from '../map/routeLayers'
 import type { LatLon, Pilot, PlannedRoute, Report, RouteMode, RoutesResponse } from '../types'
 import { AboutSheet } from './AboutSheet'
 import { DeviceFrame } from './DeviceFrame'
 import { FeedbackSheet } from './FeedbackSheet'
 import { GoNav } from './GoNav'
+import { setLanguage, t } from './i18n'
+import './i18n.ms'
 import { atFor, loadPrefs, savePrefs, type GoPrefs, type TimeChoice } from './lib'
 import { LocationPicker } from './LocationPicker'
 import { CommunityScreen } from './screens/CommunityScreen'
 import { ExploreScreen } from './screens/ExploreScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { ReportScreen } from './screens/ReportScreen'
+import { WalkScreen } from './screens/WalkScreen'
 import { SegmentSheet } from './SegmentSheet'
 import type { Endpoint, GoTab, PickTarget } from './types'
 import { readGoUrl, writeGoUrl } from './url'
@@ -26,6 +30,17 @@ export type RoutesState =
   | { status: 'ready'; key: string; data: RoutesResponse }
   | { status: 'error'; key: string; message: string }
 
+/** Names a dropped pin after the nearest place or street ("Near ZUS Coffee", "Jalan Puteri 1/2"). */
+async function nameForPin(point: LatLon): Promise<Pick<Endpoint, 'label' | 'area'>> {
+  try {
+    const found = await api.reverseLookup(point.latitude, point.longitude)
+    if (found.name) return { label: found.label, area: found.area }
+    return { label: t('Dropped pin'), area: found.area }
+  } catch {
+    return { label: t('Dropped pin'), area: null }
+  }
+}
+
 export default function GoApp() {
   const initial = useRef(readGoUrl()).current
   const [tab, setTab] = useState<GoTab>(initial.tab)
@@ -34,6 +49,8 @@ export default function GoApp() {
   const [timeChoice, setTimeChoice] = useState<TimeChoice>(initial.time)
   const [prefs, setPrefsState] = useState<GoPrefs>(loadPrefs)
   const [modeChoice, setModeChoice] = useState<RouteMode | null>(initial.mode)
+
+  setLanguage(prefs.lang)
 
   const [backend, setBackend] = useState<BackendState>('checking')
   const [backendMessage, setBackendMessage] = useState<string | null>(null)
@@ -49,8 +66,13 @@ export default function GoApp() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null)
   const [routesState, setRoutesState] = useState<RoutesState>({ status: 'idle' })
+  const [view, setView] = useState<MapViewInfo | null>(null)
 
-  const weather = useWeather()
+  // Walk mode: following the selected route with GPS (or a preview playback).
+  const [walking, setWalking] = useState<{ preview: boolean } | null>(null)
+  const [walkRoute, setWalkRoute] = useState<PlannedRoute | null>(null)
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null)
+
   const sheetRef = useRef<HTMLDivElement>(null)
   const goRef = useRef<HTMLDivElement>(null)
 
@@ -62,6 +84,21 @@ export default function GoApp() {
   useEffect(() => {
     writeGoUrl({ tab, from, to, time: timeChoice, mode: modeChoice })
   }, [tab, from, to, timeChoice, modeChoice])
+
+  // Start where the walker is, if they have already allowed location access (no prompt on load).
+  useEffect(() => {
+    if (initial.from || initial.to || !('geolocation' in navigator) || !navigator.permissions) return
+    navigator.permissions.query({ name: 'geolocation' as PermissionName }).then(
+      (status) => {
+        if (status.state !== 'granted') return
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const { latitude, longitude } = pos.coords
+          if (isInsideDataBounds(latitude, longitude)) setFlyTarget({ latitude, longitude, key: Date.now() })
+        })
+      },
+      () => undefined,
+    )
+  }, [initial])
 
   // ---- shared data ------------------------------------------------------
 
@@ -107,14 +144,21 @@ export default function GoApp() {
 
   const routeKey =
     from && to && backend === 'online'
-      ? [from.latitude, from.longitude, to.latitude, to.longitude, timeChoice, prefs.stepFree, dataVersion].join('|')
+      ? [from.latitude, from.longitude, to.latitude, to.longitude, timeChoice, prefs.stepFree, prefs.rain, dataVersion].join('|')
       : null
 
   useEffect(() => {
     if (!routeKey || !from || !to) return
     let cancelled = false
     api
-      .getRoutes({ start: from, end: to, at: atFor(timeChoice), stepFree: prefs.stepFree, shareStats: prefs.shareStats })
+      .getRoutes({
+        start: from,
+        end: to,
+        at: atFor(timeChoice),
+        stepFree: prefs.stepFree,
+        shareStats: prefs.shareStats,
+        rain: prefs.rain,
+      })
       .then(
         (data) => !cancelled && setRoutesState({ status: 'ready', key: routeKey, data }),
         (error: unknown) => !cancelled && setRoutesState({ status: 'error', key: routeKey, message: api.errorMessage(error) }),
@@ -144,14 +188,17 @@ export default function GoApp() {
       : planned.some((r) => r.mode === defaultMode)
         ? defaultMode
         : 'shortest'
+  const selectedRoute = planned.find((r) => r.mode === selectedMode) ?? null
 
-  const routeDisplay: RouteDisplay | null = useMemo(
-    () =>
-      data && tab === 'explore'
-        ? { routes: planned, selected: selectedMode, night: !data.sun.daylight }
-        : null,
-    [data, planned, selectedMode, tab],
-  )
+  // While walking, keep showing the last route until a reroute arrives.
+  useEffect(() => {
+    if (walking && selectedRoute) setWalkRoute(selectedRoute)
+  }, [walking, selectedRoute])
+
+  const routeDisplay: RouteDisplay | null = useMemo(() => {
+    if (walking && walkRoute) return { routes: [walkRoute], selected: walkRoute.mode, night: data ? !data.sun.daylight : false }
+    return data && tab === 'explore' ? { routes: planned, selected: selectedMode, night: !data.sun.daylight } : null
+  }, [data, planned, selectedMode, tab, walking, walkRoute])
 
   // ---- map ----------------------------------------------------------------
 
@@ -165,14 +212,14 @@ export default function GoApp() {
   const pins = useMemo<PinMarker[]>(() => {
     const out: PinMarker[] = []
     if (tab !== 'home' && tab !== 'report') {
-      if (from) out.push({ kind: 'start', label: from.label, latitude: from.latitude, longitude: from.longitude })
+      if (from && !walking) out.push({ kind: 'start', label: from.label, latitude: from.latitude, longitude: from.longitude })
       if (to) out.push({ kind: 'end', label: to.label, latitude: to.latitude, longitude: to.longitude })
     }
     return out
-  }, [from, to, tab])
+  }, [from, to, tab, walking])
 
-  const pilotRing = useMemo(
-    () => (pilot ? { anchor: pilot.anchor, radiusM: pilot.radius_m } : null),
+  const auditedRing = useMemo(
+    () => (pilot ? { anchor: pilot.audited_area.anchor, radiusM: pilot.audited_area.radius_m } : null),
     [pilot],
   )
 
@@ -182,11 +229,20 @@ export default function GoApp() {
         setReportPoint(point)
         return
       }
-      const endpoint: Endpoint = { ...point, label: 'Dropped pin', source: 'pin' }
-      if (picking === 'from') setFrom(endpoint)
-      if (picking === 'to') setTo(endpoint)
+      const target = picking
+      const endpoint: Endpoint = { ...point, label: t('Dropped pin'), source: 'pin' }
+      if (target === 'from') setFrom(endpoint)
+      if (target === 'to') setTo(endpoint)
       setPicking(null)
       setModeChoice(null)
+      void nameForPin(point).then((named) => {
+        const update = (current: Endpoint | null) =>
+          current && current.source === 'pin' && current.latitude === point.latitude && current.longitude === point.longitude
+            ? { ...current, ...named }
+            : current
+        if (target === 'from') setFrom(update)
+        if (target === 'to') setTo(update)
+      })
     },
     [picking],
   )
@@ -211,108 +267,153 @@ export default function GoApp() {
     if (backend === 'online') void refreshReports()
   }
 
-  const fitKey = routes.status === 'ready' && tab === 'explore' ? `${routes.key}|${tab}` : null
+  const startWalk = (preview: boolean) => {
+    if (!selectedRoute) return
+    setWalkRoute(selectedRoute)
+    setWalking({ preview })
+    setSegmentId(null)
+  }
+
+  const endWalk = () => {
+    setWalking(null)
+    setWalkRoute(null)
+    setUserLocation(null)
+  }
+
+  // Off the route: plan again from where the walker is now.
+  const reroute = useCallback((here: LatLon) => {
+    setFrom({ ...here, label: t('Your location'), source: 'gps' })
+  }, [])
+
+  const fitKey = routes.status === 'ready' && tab === 'explore' && !walking ? `${routes.key}|${tab}` : null
+  // Search suggestions are ranked around the walker if known, otherwise the map centre
+  // (rounded to ~100 m so small pans don't refetch).
+  const nearSource = userLocation ?? view?.center ?? { latitude: MAP_CENTER[1], longitude: MAP_CENTER[0] }
+  const nearLat = Math.round(nearSource.latitude * 1000) / 1000
+  const nearLon = Math.round(nearSource.longitude * 1000) / 1000
+  const near = useMemo<LatLon>(() => ({ latitude: nearLat, longitude: nearLon }), [nearLat, nearLon])
+  const weather = useWeather(near)
 
   return (
     <DeviceFrame>
-      <div ref={goRef} className={`go go--${tab}${picking ? ' is-picking' : ''}`}>
+      <div ref={goRef} className={`go go--${walking ? 'walk' : tab}${picking ? ' is-picking' : ''}`}>
         <MapView
           padding={padding}
           routes={routeDisplay}
           fitKey={fitKey}
           reports={reports}
           pins={pins}
-          pilot={pilotRing}
+          pilot={walking ? null : auditedRing}
           picking={picking !== null}
           onPick={onPick}
-          draft={tab === 'report' ? reportPoint : null}
+          draft={tab === 'report' && !walking ? reportPoint : null}
           onDraftMove={setReportPoint}
           flyTarget={flyTarget}
-          onSegmentTap={tab === 'explore' ? setSegmentId : undefined}
+          onSegmentTap={tab === 'explore' && !walking ? setSegmentId : undefined}
+          onViewChange={setView}
+          userLocation={userLocation}
+          follow={Boolean(walking)}
         >
-          <button type="button" className="map-fab" onClick={() => setAboutOpen(true)} aria-label="About this map and WalkLah">
-            <span className="map-fab__text">i</span>
-          </button>
+          {!walking && (
+            <button type="button" className="map-fab" onClick={() => setAboutOpen(true)} aria-label={t('About WalkLah and settings')}>
+              <span className="map-fab__text">i</span>
+            </button>
+          )}
         </MapView>
 
         <BackendStatus state={backend} message={backendMessage} onRetry={() => { setBackend('checking'); void connect() }} />
 
         {picking && picking !== 'report' && (
           <div className="pick-banner" role="status">
-            <span>Tap the map to set your {picking === 'from' ? 'start' : 'destination'}</span>
+            <span>{picking === 'from' ? t('Tap the map to set your start') : t('Tap the map to set your destination')}</span>
             <button type="button" className="btn btn--small btn--light" onClick={() => setPicking(null)}>
-              Cancel
+              {t('Cancel')}
             </button>
           </div>
         )}
 
-        {tab === 'home' && (
-          <HomeScreen
-            pilot={pilot}
-            from={from}
-            to={to}
-            prefs={prefs}
-            onPrefs={setPrefs}
-            onOpenPicker={setPickerFor}
-            onSwap={swap}
-            onFindRoutes={() => changeTab('explore')}
-            onAbout={() => setAboutOpen(true)}
+        {walking && walkRoute ? (
+          <WalkScreen
+            route={walkRoute}
+            destination={to?.label ?? t('Destination')}
+            preview={walking.preview}
+            onPreviewChange={(preview) => setWalking({ preview })}
+            onPosition={setUserLocation}
+            onReroute={reroute}
+            onExit={endWalk}
+            onReported={() => void refreshReports()}
           />
-        )}
-
-        {tab !== 'home' && (
-          <section ref={sheetRef} className={`go-sheet go-sheet--${tab}`} aria-label="WalkLah">
-            <div className="go-sheet__handle" aria-hidden="true" />
-            {tab === 'explore' && (
-              <ExploreScreen
+        ) : (
+          <>
+            {tab === 'home' && (
+              <HomeScreen
                 from={from}
                 to={to}
-                onOpenPicker={setPickerFor}
-                onSwap={swap}
-                timeChoice={timeChoice}
-                onTime={(t) => {
-                  setTimeChoice(t)
-                }}
                 prefs={prefs}
                 onPrefs={setPrefs}
-                routes={routes}
-                selected={selectedMode}
-                recommended={defaultMode}
-                onSelect={setModeChoice}
-                weather={weather.byHour}
-                onFeedback={() => setFeedbackOpen(true)}
+                onOpenPicker={setPickerFor}
+                onSwap={swap}
+                onFindRoutes={() => changeTab('explore')}
+                onAbout={() => setAboutOpen(true)}
               />
             )}
-            {tab === 'report' && (
-              <ReportScreen
-                point={reportPoint}
-                onPoint={(p) => {
-                  setReportPoint(p)
-                  if (p) setFlyTarget({ ...p, key: Date.now() })
-                }}
-                onSubmitted={async () => {
-                  setReportPoint(null)
-                  await refreshReports()
-                }}
-                onCommunity={() => changeTab('community')}
-              />
-            )}
-            {tab === 'community' && (
-              <CommunityScreen
-                reports={reports}
-                onChanged={refreshReports}
-                onShowOnMap={(r) => setFlyTarget({ latitude: r.latitude, longitude: r.longitude, key: Date.now() })}
-                onReport={() => changeTab('report')}
-              />
-            )}
-          </section>
-        )}
 
-        <GoNav active={tab} onChange={changeTab} />
+            {tab !== 'home' && (
+              <section ref={sheetRef} className={`go-sheet go-sheet--${tab}`} aria-label="WalkLah">
+                <div className="go-sheet__handle" aria-hidden="true" />
+                {tab === 'explore' && (
+                  <ExploreScreen
+                    from={from}
+                    to={to}
+                    onOpenPicker={setPickerFor}
+                    onSwap={swap}
+                    timeChoice={timeChoice}
+                    onTime={setTimeChoice}
+                    prefs={prefs}
+                    onPrefs={setPrefs}
+                    routes={routes}
+                    selected={selectedMode}
+                    recommended={defaultMode}
+                    onSelect={setModeChoice}
+                    weather={weather.byHour}
+                    onFeedback={() => setFeedbackOpen(true)}
+                    onStartWalk={startWalk}
+                  />
+                )}
+                {tab === 'report' && (
+                  <ReportScreen
+                    point={reportPoint}
+                    onPoint={(p) => {
+                      setReportPoint(p)
+                      if (p) setFlyTarget({ ...p, key: Date.now() })
+                    }}
+                    onSubmitted={async () => {
+                      setReportPoint(null)
+                      await refreshReports()
+                    }}
+                    onCommunity={() => changeTab('community')}
+                  />
+                )}
+                {tab === 'community' && (
+                  <CommunityScreen
+                    reports={reports}
+                    near={near}
+                    onChanged={refreshReports}
+                    onShowOnMap={(r) => setFlyTarget({ latitude: r.latitude, longitude: r.longitude, key: Date.now() })}
+                    onReport={() => changeTab('report')}
+                  />
+                )}
+              </section>
+            )}
+
+            <GoNav active={tab} onChange={changeTab} />
+          </>
+        )}
 
         {pickerFor && (
           <LocationPicker
             which={pickerFor}
+            near={near}
             featured={pilot?.featured ?? []}
             onChoose={(endpoint) => chooseEndpoint(pickerFor, endpoint)}
             onPickOnMap={() => {

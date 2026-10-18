@@ -1,14 +1,17 @@
 import { Icon, type IconName } from '../components/icons'
-import type { Pilot } from '../types'
+import type { Pilot, RainMode } from '../types'
+import { t } from './i18n'
 import type { GoPrefs } from './lib'
 import { Sheet } from './Sheet'
 
 const HOW: { icon: IconName; title: string; text: string }[] = [
   { icon: 'map', title: 'We map the paths', text: 'OpenStreetMap paths, tree canopy, shade and on-foot checks by our team.' },
   { icon: 'flag', title: 'You report what changed', text: 'Blocked, flooded or unlit? Other walkers confirm it.' },
-  { icon: 'route', title: 'Routes work around it', text: 'Verified obstacles are avoided; shade and lighting shape the comfy route.' },
+  { icon: 'route', title: 'Routes work around it', text: 'Confirmed obstacles are avoided; shade, lighting and rain cover shape the comfy route.' },
   { icon: 'chart', title: 'The township fixes it', text: 'Operators see which problems cost walkers the most and plan repairs.' },
 ]
+
+const pct = (value: number | null | undefined) => (value === null || value === undefined ? '—' : `${Math.round(value)}%`)
 
 export function AboutSheet({
   pilot,
@@ -21,9 +24,10 @@ export function AboutSheet({
   onPrefs: (p: GoPrefs) => void
   onClose: () => void
 }) {
-  const c = pilot?.coverage
+  const national = pilot?.coverage_area === 'malaysia' ? pilot.coverage : null
+  const audited = pilot?.audited_coverage
   return (
-    <Sheet title="How WalkLah works" onClose={onClose} tall>
+    <Sheet title={t('How WalkLah works')} onClose={onClose} tall>
       <ol className="how-list">
         {HOW.map((step) => (
           <li key={step.title}>
@@ -31,50 +35,112 @@ export function AboutSheet({
               <Icon name={step.icon} size={18} />
             </span>
             <span>
-              <strong>{step.title}</strong>
-              <span>{step.text}</span>
+              <strong>{t(step.title)}</strong>
+              <span>{t(step.text)}</span>
             </span>
           </li>
         ))}
       </ol>
-      <p className="fine-print">This is our S.T.E.P. framework: Survey, Track, Explore, Prioritise.</p>
+      <p className="fine-print">{t('This is our S.T.E.P. framework: Survey, Track, Explore, Prioritise.')}</p>
 
-      {c && (
+      {pilot && (
         <section className="about-section">
-          <h3>What the map knows today</h3>
-          <div className="coverage-grid">
-            <div>
-              <strong>{Math.round(c.canopy_pct ?? c.green_pct)}%</strong>
-              <span>of paths under trees</span>
+          <h3>{t('What the map knows today')}</h3>
+          {national && (
+            <div className="coverage-grid">
+              <div>
+                <strong>{Math.round(national.network_km).toLocaleString('en-MY')} km</strong>
+                <span>{t('of walkable paths in Malaysia')}</span>
+              </div>
+              <div>
+                <strong>{national.places.toLocaleString('en-MY')}</strong>
+                <span>{t('places to search')}</span>
+              </div>
+              <div>
+                <strong>{pct(national.sidewalk_known_pct)}</strong>
+                <span>{t('sidewalk status known')}</span>
+              </div>
+              <div>
+                <strong>{pct(national.lighting_tagged_pct ?? national.lighting_known_pct)}</strong>
+                <span>{t('lighting tagged')}</span>
+              </div>
             </div>
-            <div>
-              <strong>{Math.round(c.covered_pct)}%</strong>
-              <span>covered walkways</span>
-            </div>
-            <div>
-              <strong>{Math.round(c.sidewalk_known_pct)}%</strong>
-              <span>sidewalk status known</span>
-            </div>
-            <div>
-              <strong>{Math.round(c.lighting_known_pct)}%</strong>
-              <span>lighting known</span>
-            </div>
-          </div>
-          <p className="fine-print">
-            Everything else is shown as unknown, not as fine. Pilot area: {pilot?.radius_m.toLocaleString('en-MY')} m around{' '}
-            {pilot?.anchor.name}.
-          </p>
+          )}
+          {audited && (
+            <>
+              <h4 className="about-subhead">
+                {t('Team-audited area')} · {pilot.audited_area.anchor.name}
+              </h4>
+              <div className="coverage-grid">
+                <div>
+                  <strong>{pct(audited.canopy_pct ?? audited.green_pct)}</strong>
+                  <span>{t('of paths under trees')}</span>
+                </div>
+                <div>
+                  <strong>{pct(audited.covered_pct)}</strong>
+                  <span>{t('covered walkways')}</span>
+                </div>
+                <div>
+                  <strong>{pct(audited.sidewalk_known_pct)}</strong>
+                  <span>{t('sidewalk status known')}</span>
+                </div>
+                <div>
+                  <strong>{pct(audited.lighting_known_pct)}</strong>
+                  <span>{t('lighting known')}</span>
+                </div>
+              </div>
+            </>
+          )}
+          <p className="fine-print">{t('Everything else is shown as unknown, not as fine.')}</p>
         </section>
       )}
 
       <section className="about-section">
-        <h3>Your settings</h3>
+        <h3>{t('Your settings')}</h3>
+        <div className="settings-row">
+          <span>
+            <Icon name="globe" size={16} /> {t('Language')}
+          </span>
+          <div className="segmented segmented--two" role="radiogroup" aria-label={t('Language')}>
+            {(['en', 'ms'] as const).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                role="radio"
+                aria-checked={prefs.lang === lang}
+                className={prefs.lang === lang ? 'is-active' : ''}
+                onClick={() => onPrefs({ ...prefs, lang })}
+              >
+                {lang === 'en' ? 'English' : 'Bahasa Melayu'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-row">
+          <span>
+            <Icon name="umbrella" size={16} /> {t('Rain cover')}
+          </span>
+          <div className="segmented segmented--three" role="radiogroup" aria-label={t('Rain cover')}>
+            {(['auto', 'on', 'off'] as RainMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                role="radio"
+                aria-checked={prefs.rain === mode}
+                className={prefs.rain === mode ? 'is-active' : ''}
+                onClick={() => onPrefs({ ...prefs, rain: mode })}
+              >
+                {t({ auto: 'Auto', on: 'On', off: 'Off' }[mode])}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="toggle-row">
           <input type="checkbox" checked={prefs.stepFree} onChange={(e) => onPrefs({ ...prefs, stepFree: e.target.checked })} />
           <span className="toggle-row__switch" aria-hidden="true" />
           <span className="toggle-row__text">
-            <strong>Step-free routes</strong>
-            <span>Avoid stairs</span>
+            <strong>{t('Step-free routes')}</strong>
+            <span>{t('Avoid stairs')}</span>
           </span>
         </label>
         <label className="toggle-row">
@@ -85,21 +151,25 @@ export function AboutSheet({
           />
           <span className="toggle-row__switch" aria-hidden="true" />
           <span className="toggle-row__text">
-            <strong>Share anonymous route stats</strong>
-            <span>Helps the township see which problems cost walkers time. No locations or identity are stored.</span>
+            <strong>{t('Share anonymous route stats')}</strong>
+            <span>
+              {t('Helps the township see which problems cost walkers time. Only distances and a ~1 km area are stored, never your exact route or identity.')}
+            </span>
           </span>
         </label>
       </section>
 
       <section className="about-section about-section--credits">
-        <h3>Data</h3>
+        <h3>{t('Data')}</h3>
         <p>
-          Map data © OpenStreetMap contributors (ODbL) · tiles OpenFreeMap / OpenMapTiles · tree canopy: Meta & World
-          Resources Institute, Global Canopy Height (CC BY 4.0), imagery © Maxar · weather: Open-Meteo.com (CC BY 4.0) ·
-          sun position: NOAA equations.
+          Map data © OpenStreetMap contributors (ODbL) · places: Overture Maps Foundation (CDLA-Permissive-2.0) · tiles
+          OpenFreeMap / OpenMapTiles · tree canopy: Meta & World Resources Institute, Global Canopy Height (CC BY 4.0),
+          imagery © Maxar; ESA WorldCover 10 m 2021 (CC BY 4.0) · weather: Open-Meteo.com (CC BY 4.0) · sun position:
+          NOAA equations.
         </p>
         <p>
-          WalkLah gives comfort estimates, not safety guarantees. <a href="?app=insights">For township operators →</a>
+          {t('WalkLah gives comfort estimates, not safety guarantees.')}{' '}
+          <a href="?app=insights">{t('For township operators →')}</a>
         </p>
       </section>
     </Sheet>

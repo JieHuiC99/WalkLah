@@ -5,12 +5,16 @@ import { Icon } from '../../components/icons'
 import { StatusBadge } from '../../components/StatusBadge'
 import { categoryLabel } from '../../config/categories'
 import { statusMeta } from '../../config/status'
-import type { Report, ReportStatus } from '../../types'
+import type { LatLon, Report, ReportStatus } from '../../types'
 import { formatRelative } from '../../utils/format'
 import { newestFirst } from '../../utils/reports'
-import { deviceId } from '../lib'
+import { t } from '../i18n'
+import { deviceId, distanceLabel } from '../lib'
+import { haversine } from '../walk'
 
 type Filter = 'open' | 'active' | 'pending' | 'closed'
+
+const NEARBY_M = 10_000
 
 const FILTERS: { id: Filter; label: string; statuses: ReportStatus[] }[] = [
   { id: 'open', label: 'Open', statuses: ['pending', 'verified_active'] },
@@ -24,23 +28,37 @@ function expiresIn(report: Report): string | null {
   const ms = Date.parse(report.expires_at.replace(/(\.\d{3})\d+/, '$1')) - Date.now()
   if (Number.isNaN(ms) || ms <= 0) return null
   const hours = Math.floor(ms / 3_600_000)
-  return hours >= 1 ? `Expires in ${hours} h unless reconfirmed` : 'Expires within the hour unless reconfirmed'
+  return hours >= 1
+    ? t('Expires in {h} h unless reconfirmed', { h: hours })
+    : t('Expires within the hour unless reconfirmed')
 }
 
 interface Props {
   reports: Report[]
+  /** Map centre or the walker's position: nearby reports first. */
+  near: LatLon | null
   onChanged: () => Promise<void>
   onShowOnMap: (report: Report) => void
   onReport: () => void
 }
 
-export function CommunityScreen({ reports, onChanged, onShowOnMap, onReport }: Props) {
+export function CommunityScreen({ reports, near, onChanged, onShowOnMap, onReport }: Props) {
   const [filter, setFilter] = useState<Filter>('open')
+  const [scope, setScope] = useState<'nearby' | 'all'>('nearby')
   const [busy, setBusy] = useState<string | null>(null)
   const [voted, setVoted] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<{ id: string; message: string } | null>(null)
   const active = FILTERS.find((f) => f.id === filter)!
-  const visible = newestFirst(reports).filter((r) => active.statuses.includes(r.status))
+
+  const distanceTo = (r: Report) =>
+    near ? haversine([near.longitude, near.latitude], [r.longitude, r.latitude]) : null
+  const inScope = (r: Report) => scope === 'all' || !near || (distanceTo(r) ?? 0) <= NEARBY_M
+  const scoped = reports.filter(inScope)
+  const visible = (
+    scope === 'nearby' && near
+      ? [...scoped].sort((a, b) => (distanceTo(a) ?? 0) - (distanceTo(b) ?? 0))
+      : newestFirst(scoped)
+  ).filter((r) => active.statuses.includes(r.status))
 
   const vote = async (report: Report, stillThere: boolean) => {
     setBusy(report.id)
@@ -58,10 +76,16 @@ export function CommunityScreen({ reports, onChanged, onShowOnMap, onReport }: P
 
   return (
     <div className="go-screen">
-      <h1 className="go-title">Community updates</h1>
-      <p className="go-subtitle">Reports from walkers near Universiti Malaya</p>
+      <h1 className="go-title">{t('Community updates')}</h1>
+      <div className="segmented segmented--two community-scope" role="radiogroup" aria-label={t('Area')}>
+        {(['nearby', 'all'] as const).map((s) => (
+          <button key={s} type="button" role="radio" aria-checked={scope === s} className={scope === s ? 'is-active' : ''} onClick={() => setScope(s)}>
+            {s === 'nearby' ? t('Within 10 km') : t('All of Malaysia')}
+          </button>
+        ))}
+      </div>
 
-      <div className="filter-pills" role="tablist" aria-label="Filter by status">
+      <div className="filter-pills" role="tablist" aria-label={t('Filter by status')}>
         {FILTERS.map((f) => (
           <button
             key={f.id}
@@ -71,47 +95,57 @@ export function CommunityScreen({ reports, onChanged, onShowOnMap, onReport }: P
             className={filter === f.id ? 'is-active' : ''}
             onClick={() => setFilter(f.id)}
           >
-            {f.label} <span className="filter-pills__count">{reports.filter((r) => f.statuses.includes(r.status)).length}</span>
+            {t(f.label)} <span className="filter-pills__count">{scoped.filter((r) => f.statuses.includes(r.status)).length}</span>
           </button>
         ))}
       </div>
 
-      {reports.length === 0 ? (
+      {scoped.length === 0 ? (
         <div className="empty-state">
           <Icon name="shoe" size={32} />
-          <strong>No reports yet</strong>
-          <p>Seen a blocked path, flooding or a broken light? Let the next walker know.</p>
+          <strong>{t('No reports here yet')}</strong>
+          <p>{t('Seen a blocked path, flooding or a broken light? Let the next walker know.')}</p>
           <button type="button" className="btn btn--primary" onClick={onReport}>
-            Report an issue
+            {t('Report an issue')}
           </button>
         </div>
       ) : visible.length === 0 ? (
-        <p className="empty-note">Nothing here right now.</p>
+        <p className="empty-note">{t('Nothing here right now.')}</p>
       ) : (
         <ul className="report-list">
           {visible.map((report) => {
             const open = report.status === 'pending' || report.status === 'verified_active'
             const myVote = voted[report.id]
             const expiry = expiresIn(report)
+            const distance = distanceTo(report)
             return (
               <li key={report.id} className="report-item" style={{ borderLeftColor: statusMeta(report.status).color }}>
                 <CategoryIcon category={report.category} size={22} />
                 <div className="report-item__body">
                   <div className="report-item__top">
-                    <strong>{categoryLabel(report.category)}</strong>
-                    <span className="muted small">{formatRelative(report.created_at)}</span>
+                    <strong>{t(categoryLabel(report.category))}</strong>
+                    <span className="muted small">
+                      {distance !== null ? `${distanceLabel(distance)} · ` : ''}
+                      {formatRelative(report.created_at)}
+                    </span>
                   </div>
                   {report.description && <p className="report-item__description">{report.description}</p>}
                   <div className="report-item__meta">
                     <StatusBadge status={report.status} size="small" />
-                    {report.source === 'operator' && <span className="muted small">Official update</span>}
+                    {report.community_confirmed && (
+                      <span className="status-badge status-badge--amber status-badge--small">{t('Confirmed by walkers')}</span>
+                    )}
+                    {report.source === 'operator' && <span className="muted small">{t('Official update')}</span>}
                     <button type="button" className="link-button" onClick={() => onShowOnMap(report)}>
-                      <Icon name="pin" size={14} /> Map
+                      <Icon name="pin" size={14} /> {t('Map')}
                     </button>
                   </div>
                   {(report.confirmations.still_there > 0 || report.confirmations.cleared > 0) && (
                     <p className="muted small">
-                      {report.confirmations.still_there} still there · {report.confirmations.cleared} say cleared
+                      {t('{a} still there · {b} say cleared', {
+                        a: report.confirmations.still_there,
+                        b: report.confirmations.cleared,
+                      })}
                     </p>
                   )}
                   {expiry && <p className="muted small">{expiry}</p>}
@@ -123,7 +157,7 @@ export function CommunityScreen({ reports, onChanged, onShowOnMap, onReport }: P
                         disabled={busy === report.id}
                         onClick={() => void vote(report, true)}
                       >
-                        Still there
+                        {t('Still there')}
                       </button>
                       <button
                         type="button"
@@ -131,7 +165,7 @@ export function CommunityScreen({ reports, onChanged, onShowOnMap, onReport }: P
                         disabled={busy === report.id}
                         onClick={() => void vote(report, false)}
                       >
-                        Cleared
+                        {t('Cleared')}
                       </button>
                     </div>
                   )}
@@ -143,7 +177,9 @@ export function CommunityScreen({ reports, onChanged, onShowOnMap, onReport }: P
         </ul>
       )}
       <p className="fine-print">
-        Votes help operators decide what to check first. Only operator-verified obstacles change routes.
+        {t(
+          'When 3 or more walkers confirm a temporary hazard, Practical and Enjoyable routes avoid it until an operator checks it. Operator-verified obstacles are always avoided.',
+        )}
       </p>
     </div>
   )

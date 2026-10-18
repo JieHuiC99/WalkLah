@@ -1,13 +1,16 @@
 import type { LngLatBoundsLike } from 'maplibre-gl'
 
-/** Area covered by the backend's pedestrian graph (2 km around 3.118, 101.655). */
-export const DATA_BOUNDS = { south: 3.1, north: 3.136, west: 101.637, east: 101.673 } as const
+/** Malaysia (Peninsular, Sabah, Sarawak; Singapore and Brunei fall inside too). */
+export const DATA_BOUNDS = { south: 0.8, north: 7.5, west: 99.5, east: 119.5 } as const
 
-export const MAP_CENTER: [number, number] = [101.6585, 3.1175] // [lon, lat], between LRT Universiti and campus
-export const MAP_ZOOM = 15.3
+/** Default view before the walker's location is known: central Kuala Lumpur and the Klang Valley. */
+export const MAP_CENTER: [number, number] = [101.6869, 3.139] // [lon, lat]
+export const MAP_ZOOM = 12.5
+/** Zoom used when centring on a person or a place. */
+export const STREET_ZOOM = 16
 
-const PAD = 0.01
-/** The camera may not wander far outside the data area. */
+const PAD = 1
+/** The camera may not wander far outside Malaysia. */
 export const MAX_BOUNDS: LngLatBoundsLike = [
   [DATA_BOUNDS.west - PAD, DATA_BOUNDS.south - PAD],
   [DATA_BOUNDS.east + PAD, DATA_BOUNDS.north + PAD],
@@ -15,7 +18,7 @@ export const MAX_BOUNDS: LngLatBoundsLike = [
 
 export const MAP_STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/positron'
 
-/** Points can only be chosen inside the data area. */
+/** Points can only be chosen inside the area WalkLah covers. */
 export function isInsideDataBounds(lat: number, lon: number): boolean {
   return lat >= DATA_BOUNDS.south && lat <= DATA_BOUNDS.north && lon >= DATA_BOUNDS.west && lon <= DATA_BOUNDS.east
 }

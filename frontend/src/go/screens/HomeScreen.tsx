@@ -1,11 +1,10 @@
 import { Icon } from '../../components/icons'
-import type { Pilot } from '../../types'
+import { t } from '../i18n'
 import { greeting, type GoPrefs } from '../lib'
 import { TripCard } from '../TripCard'
 import type { Endpoint } from '../types'
 
 interface Props {
-  pilot: Pilot | null
   from: Endpoint | null
   to: Endpoint | null
   prefs: GoPrefs
@@ -16,7 +15,7 @@ interface Props {
   onAbout: () => void
 }
 
-export function HomeScreen({ pilot, from, to, prefs, onPrefs, onOpenPicker, onSwap, onFindRoutes, onAbout }: Props) {
+export function HomeScreen({ from, to, prefs, onPrefs, onOpenPicker, onSwap, onFindRoutes, onAbout }: Props) {
   const canRoute = Boolean(from && to)
   return (
     <div className="go-home">
@@ -30,8 +29,16 @@ export function HomeScreen({ pilot, from, to, prefs, onPrefs, onOpenPicker, onSw
             <span>
               Walk<em>Lah</em>
             </span>
-            <small>Waze for Walking</small>
+            <small>{t('Waze for Walking')}</small>
           </span>
+          <button
+            type="button"
+            className="lang-toggle"
+            onClick={() => onPrefs({ ...prefs, lang: prefs.lang === 'ms' ? 'en' : 'ms' })}
+            aria-label={prefs.lang === 'ms' ? 'Switch to English' : 'Tukar ke Bahasa Melayu'}
+          >
+            <Icon name="globe" size={14} /> {prefs.lang === 'ms' ? 'EN' : 'BM'}
+          </button>
         </div>
         <p className="home-hero__script" aria-hidden="true">
           Jom
@@ -39,7 +46,7 @@ export function HomeScreen({ pilot, from, to, prefs, onPrefs, onOpenPicker, onSw
           jalan lah!
         </p>
         <h1 className="home-hero__title">{greeting()}</h1>
-        <p className="home-hero__tagline">Know what a walk is like before you start it.</p>
+        <p className="home-hero__tagline">{t('Know what a walk is like before you start it.')}</p>
       </header>
 
       <div className="go-home__body">
@@ -49,9 +56,9 @@ export function HomeScreen({ pilot, from, to, prefs, onPrefs, onOpenPicker, onSw
 
         <section aria-labelledby="walker-type">
           <h2 id="walker-type" className="go-label">
-            I'm walking…
+            {t("I'm walking…")}
           </h2>
-          <div className="walker-type" role="radiogroup" aria-label="Walking purpose">
+          <div className="walker-type" role="radiogroup" aria-label={t('Walking purpose')}>
             <button
               type="button"
               role="radio"
@@ -60,8 +67,8 @@ export function HomeScreen({ pilot, from, to, prefs, onPrefs, onOpenPicker, onSw
               onClick={() => onPrefs({ ...prefs, walker: 'commute' })}
             >
               <Icon name="train" size={20} />
-              <strong>To get somewhere</strong>
-              <span>Reliable, fewer surprises</span>
+              <strong>{t('To get somewhere')}</strong>
+              <span>{t('Reliable, fewer surprises')}</span>
             </button>
             <button
               type="button"
@@ -71,8 +78,8 @@ export function HomeScreen({ pilot, from, to, prefs, onPrefs, onOpenPicker, onSw
               onClick={() => onPrefs({ ...prefs, walker: 'leisure' })}
             >
               <Icon name="leaf" size={20} />
-              <strong>For the walk</strong>
-              <span>Shade, green, quiet</span>
+              <strong>{t('For the walk')}</strong>
+              <span>{t('Shade, green, quiet')}</span>
             </button>
           </div>
         </section>
@@ -85,19 +92,18 @@ export function HomeScreen({ pilot, from, to, prefs, onPrefs, onOpenPicker, onSw
           />
           <span className="toggle-row__switch" aria-hidden="true" />
           <span className="toggle-row__text">
-            <strong>Step-free</strong>
-            <span>Avoid stairs (wheelchairs, prams, luggage)</span>
+            <strong>{t('Step-free')}</strong>
+            <span>{t('Avoid stairs (wheelchairs, prams, luggage)')}</span>
           </span>
           <Icon name="wheelchair" size={20} />
         </label>
 
         <button type="button" className="btn btn--primary btn--block btn--large" disabled={!canRoute} onClick={onFindRoutes}>
-          Find routes <Icon name="arrowRight" size={20} className="accent-icon" />
+          {t('Find routes')} <Icon name="arrowRight" size={20} className="accent-icon" />
         </button>
 
         <button type="button" className="about-link" onClick={onAbout}>
-          <Icon name="info" size={16} /> How WalkLah works
-          {pilot ? ` · pilot around ${pilot.anchor.name}` : ''}
+          <Icon name="info" size={16} /> {t('How WalkLah works')}
         </button>
       </div>
     </div>

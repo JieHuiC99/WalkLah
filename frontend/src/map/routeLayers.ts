@@ -44,12 +44,34 @@ function setData(map: MapLibreMap, id: string, data: FeatureCollection) {
 
 /** Adds every overlay source/layer if missing (they vanish whenever the style is replaced). */
 export function ensureOverlayLayers(map: MapLibreMap): void {
-  for (const id of ['pilot-ring', 'routes-alt', 'route-selected', 'route-selected-segments', 'scenario-link']) {
+  for (const id of ['heat', 'pilot-ring', 'routes-alt', 'route-selected', 'route-selected-segments', 'scenario-link']) {
     ensureSource(map, id)
   }
   const add = (layer: Parameters<MapLibreMap['addLayer']>[0]) => {
     if (!map.getLayer(layer.id)) map.addLayer(layer)
   }
+  // Insights heatmap (reports and trips affected by hazards), under everything else.
+  add({
+    id: 'heat-layer',
+    type: 'heatmap',
+    source: 'heat',
+    maxzoom: 18,
+    paint: {
+      'heatmap-weight': ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 10, 1],
+      'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 16, 2],
+      'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 8, 10, 16, 36],
+      'heatmap-opacity': 0.75,
+      'heatmap-color': [
+        'interpolate',
+        ['linear'],
+        ['heatmap-density'],
+        0, 'rgba(246,196,69,0)',
+        0.3, 'rgba(246,196,69,0.55)',
+        0.6, COLORS.amber,
+        1, COLORS.red,
+      ],
+    },
+  })
   add({
     id: 'pilot-ring-fill',
     type: 'fill',
@@ -160,6 +182,17 @@ export function setPilotRing(map: MapLibreMap, center: LatLon | null, radiusM: n
   setData(map, 'pilot-ring', {
     type: 'FeatureCollection',
     features: center ? [circlePolygon(center, radiusM)] : [],
+  })
+}
+
+export function setHeatData(map: MapLibreMap, points: (LatLon & { weight: number })[] | null): void {
+  setData(map, 'heat', {
+    type: 'FeatureCollection',
+    features: (points ?? []).map((p) => ({
+      type: 'Feature',
+      properties: { weight: p.weight },
+      geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+    })),
   })
 }
 

@@ -107,8 +107,9 @@ export function TrackStage({ operatorKey, overview, reports, refresh, flyTo, sta
         ))}
       </div>
 
-      <p className="demo-label">
-        <Icon name="info" size={16} /> Demo data — verification here stands in for a site check by township staff.
+      <p className="info-note">
+        <Icon name="info" size={16} /> Temporary hazards confirmed by 3 or more walkers are already avoided by routes.
+        Verify or clear them after a site check; your decision overrides walker votes.
       </p>
 
       {reports.length === 0 ? (
@@ -121,6 +122,9 @@ export function TrackStage({ operatorKey, overview, reports, refresh, flyTo, sta
               <li key={report.id} className="ops-row" style={{ borderLeftColor: statusMeta(report.status).color }}>
                 <div className="ops-row__head">
                   <StatusBadge status={report.status} />
+                  {report.community_confirmed && (
+                    <span className="status-badge status-badge--amber status-badge--small">Confirmed by walkers · avoided</span>
+                  )}
                   <span className="muted small">
                     {report.source === 'operator' ? 'Operator · ' : ''}
                     {formatRelative(report.created_at)} · {report.temporary_or_permanent}
@@ -201,8 +205,8 @@ export function TrackStage({ operatorKey, overview, reports, refresh, flyTo, sta
 
       <section className="reset-zone">
         {confirmReset ? (
-          <div className="reset-confirm" role="group" aria-label="Confirm reset">
-            <span>Remove all reports, votes and history from the demo server?</span>
+          <div className="reset-confirm" role="group" aria-label="Confirm clearing all reports">
+            <span>Remove every report, vote and verification history? Route statistics, feedback and audits are kept.</span>
             <div className="button-row">
               <button type="button" className="btn btn--small" onClick={() => setConfirmReset(false)}>
                 Cancel
@@ -211,18 +215,18 @@ export function TrackStage({ operatorKey, overview, reports, refresh, flyTo, sta
                 type="button"
                 className="btn btn--small btn--danger"
                 onClick={async () => {
-                  await api.resetDemo(operatorKey)
+                  await api.clearAllReports(operatorKey)
                   setConfirmReset(false)
                   await refresh()
                 }}
               >
-                Yes, reset
+                Yes, clear all
               </button>
             </div>
           </div>
         ) : (
           <button type="button" className="btn btn--small" onClick={() => setConfirmReset(true)}>
-            <Icon name="refresh" size={16} /> Reset demo data
+            <Icon name="refresh" size={16} /> Clear all reports
           </button>
         )}
       </section>

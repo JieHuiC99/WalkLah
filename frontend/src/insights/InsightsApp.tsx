@@ -13,11 +13,21 @@ import './insights.css'
 
 const KEY_STORAGE = 'walklah.operatorKey'
 
-function readKey(): string | null {
+// Insights is open by default. A deployment can require an operator key (WALKLAH_OPERATOR_KEY on
+// the server); only then does the app ask for it, and keeps it for this browser session.
+function readKey(): string {
   try {
-    return window.sessionStorage.getItem(KEY_STORAGE)
+    return window.sessionStorage.getItem(KEY_STORAGE) ?? ''
   } catch {
-    return null
+    return ''
+  }
+}
+
+function forgetKey(): void {
+  try {
+    window.sessionStorage.removeItem(KEY_STORAGE)
+  } catch {
+    // ignore
   }
 }
 
@@ -42,7 +52,8 @@ export interface StageProps {
 }
 
 export default function InsightsApp() {
-  const [key, setKey] = useState<string | null>(readKey)
+  const [key, setKey] = useState<string>(readKey)
+  const [needKey, setNeedKey] = useState(false)
   const [stage, setStage] = useState<StepStage>(readStage)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [reports, setReports] = useState<Report[]>([])
@@ -60,7 +71,6 @@ export default function InsightsApp() {
   }, [stage])
 
   const refresh = useCallback(async () => {
-    if (!key) return
     try {
       const [o, r] = await Promise.all([api.getOverview(key), api.getReports()])
       setOverview(o)
@@ -68,19 +78,14 @@ export default function InsightsApp() {
       setError(null)
     } catch (e) {
       if (e instanceof api.ApiError && e.status === 401) {
-        try {
-          window.sessionStorage.removeItem(KEY_STORAGE)
-        } catch {
-          // ignore
-        }
-        setKey(null)
+        forgetKey()
+        setNeedKey(true)
       }
       setError(api.errorMessage(e))
     }
   }, [key])
 
   useEffect(() => {
-    if (!key) return
     let cancelled = false
     Promise.all([api.getOverview(key), api.getReports(), api.getPilot()]).then(
       ([o, r, p]) => {
@@ -91,8 +96,8 @@ export default function InsightsApp() {
       },
       (e: unknown) => {
         if (cancelled) return
-        if (e instanceof api.ApiError && e.status === 401) setKey(null)
-        setError(api.errorMessage(e))
+        if (e instanceof api.ApiError && e.status === 401) setNeedKey(true)
+        else setError(api.errorMessage(e))
       },
     )
     return () => {
@@ -123,7 +128,17 @@ export default function InsightsApp() {
   const draft = stage === 'T' ? picked.closure : stage === 'P' ? (picked.linkEnd ?? picked.linkStart) : null
   const padding = useCallback(() => ({ top: 60, right: 60, bottom: 60, left: 60 }), [])
 
-  if (!key) return <KeyGate onKey={setKey} error={error} />
+  if (needKey) {
+    return (
+      <KeyGate
+        onKey={(k) => {
+          setKey(k)
+          setNeedKey(false)
+          setError(null)
+        }}
+      />
+    )
+  }
 
   const stageProps: StageProps = {
     operatorKey: key,
@@ -148,7 +163,7 @@ export default function InsightsApp() {
             <strong>
               Walk<em>Lah</em> Insights
             </strong>
-            <small>Township operator view · {pilot?.anchor.name ?? 'Universiti Malaya pilot'}</small>
+            <small>Township operator view{pilot?.coverage_area === 'malaysia' ? ' · Malaysia' : ''}</small>
           </span>
         </div>
         <div className="insights__rail">
@@ -158,20 +173,19 @@ export default function InsightsApp() {
           <a href="./" className="btn btn--small btn--light">
             <Icon name="walk" size={16} /> WalkLah Go
           </a>
-          <button
-            type="button"
-            className="btn btn--small btn--ghost insights__signout"
-            onClick={() => {
-              try {
-                window.sessionStorage.removeItem(KEY_STORAGE)
-              } catch {
-                // ignore
-              }
-              setKey(null)
-            }}
-          >
-            <Icon name="lock" size={16} /> Sign out
-          </button>
+          {key && (
+            <button
+              type="button"
+              className="btn btn--small btn--ghost insights__signout"
+              onClick={() => {
+                forgetKey()
+                setKey('')
+                setNeedKey(true)
+              }}
+            >
+              <Icon name="lock" size={16} /> Sign out
+            </button>
+          )}
         </div>
       </header>
       {error && (
@@ -217,10 +231,10 @@ export default function InsightsApp() {
   )
 }
 
-function KeyGate({ onKey, error }: { onKey: (key: string) => void; error: string | null }) {
+function KeyGate({ onKey }: { onKey: (key: string) => void }) {
   const [value, setValue] = useState('')
   const [checking, setChecking] = useState(false)
-  const [message, setMessage] = useState<string | null>(error)
+  const [message, setMessage] = useState<string | null>(null)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -248,7 +262,7 @@ function KeyGate({ onKey, error }: { onKey: (key: string) => void; error: string
           <Icon name="lock" size={20} />
         </span>
         <h1>WalkLah Insights</h1>
-        <p>For township and campus operators. Verifying reports and running scenarios needs the operator key.</p>
+        <p>This WalkLah server is set up for named operators only. Enter the operator key from your administrator.</p>
         <label className="go-field">
           <span className="go-label">Operator key</span>
           <input

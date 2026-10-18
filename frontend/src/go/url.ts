@@ -1,4 +1,4 @@
-// Go state lives in the query string so a rehearsed demo link opens preloaded, e.g.
+// Go state lives in the query string so a shared link opens the same trip, e.g.
 // ?tab=explore&from=3.114548,101.661702&fn=LRT%20Universiti&to=3.121464,101.656556&tn=Dewan%20Tunku%20Canselor&t=13
 
 import type { RouteMode } from '../types'
@@ -8,11 +8,11 @@ import type { Endpoint, GoTab } from './types'
 const TABS: GoTab[] = ['home', 'explore', 'report', 'community']
 const MODES: RouteMode[] = ['shortest', 'practical', 'enjoyable']
 
-function parsePoint(value: string | null, label: string | null): Endpoint | null {
+function parsePoint(value: string | null, label: string | null, area: string | null): Endpoint | null {
   if (!value) return null
   const [lat, lon] = value.split(',').map(Number)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
-  return { latitude: lat, longitude: lon, label: label || 'Dropped pin', source: label ? 'place' : 'pin' }
+  return { latitude: lat, longitude: lon, label: label || 'Dropped pin', area, source: label ? 'place' : 'pin' }
 }
 
 export function readGoUrl() {
@@ -22,8 +22,8 @@ export function readGoUrl() {
   const mode = MODES.includes(p.get('mode') as RouteMode) ? (p.get('mode') as RouteMode) : null
   return {
     tab,
-    from: parsePoint(p.get('from'), p.get('fn')),
-    to: parsePoint(p.get('to'), p.get('tn')),
+    from: parsePoint(p.get('from'), p.get('fn'), p.get('fa')),
+    to: parsePoint(p.get('to'), p.get('tn'), p.get('ta')),
     time,
     mode,
   }
@@ -41,10 +41,12 @@ export function writeGoUrl(state: {
   if (state.from) {
     p.set('from', `${state.from.latitude.toFixed(6)},${state.from.longitude.toFixed(6)}`)
     p.set('fn', state.from.label)
+    if (state.from.area) p.set('fa', state.from.area)
   }
   if (state.to) {
     p.set('to', `${state.to.latitude.toFixed(6)},${state.to.longitude.toFixed(6)}`)
     p.set('tn', state.to.label)
+    if (state.to.area) p.set('ta', state.to.area)
   }
   if (state.time !== 'now') p.set('t', state.time)
   if (state.mode) p.set('mode', state.mode)

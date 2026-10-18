@@ -10,13 +10,34 @@ export interface Destination extends LatLon {
   name: string
 }
 
-export type PlaceCategory = 'transit' | 'campus' | 'daily' | 'leisure' | 'health' | 'other'
+export type PlaceCategory =
+  | 'transit'
+  | 'food'
+  | 'shopping'
+  | 'campus'
+  | 'daily'
+  | 'leisure'
+  | 'health'
+  | 'civic'
+  | 'other'
 
 export interface Place extends LatLon {
   id: string
   name: string
   category: PlaceCategory
-  kind: 'rail_station' | 'bus_stop' | null
+  kind: 'rail_station' | 'station_entrance' | 'bus_stop' | null
+  /** Neighbourhood and town, e.g. "Bandar Puteri, Puchong" (tells branches apart). */
+  area?: string | null
+  brand?: string | null
+  source?: string
+  distance_m?: number
+}
+
+export interface ReverseResult {
+  name: string | null
+  label: string
+  area: string | null
+  place: Place | null
 }
 
 export interface LineStringGeometry {
@@ -46,6 +67,32 @@ export interface RouteWarning {
   segment_id: string
 }
 
+export interface RouteStep {
+  type: 'depart' | 'turn' | 'continue' | 'steps' | 'arrive'
+  modifier: string | null
+  /** English sentence; the app rebuilds it from the fields below for other languages. */
+  instruction: string
+  name: string | null
+  /** Description of an unnamed way, e.g. "the footpath". */
+  way: string | null
+  /** Compass direction of the first step, e.g. "north-east". */
+  direction: string | null
+  distance_m: number
+  /** Metres from the start where this step begins. */
+  at_m: number
+  location: [number, number]
+}
+
+export interface RouteAlert {
+  type: 'sun' | 'unlit' | 'light_unknown' | 'uncovered' | 'steps' | 'crossing' | 'hazard'
+  at_m: number
+  length_m: number | null
+  text: string
+  location: [number, number]
+  /** Report category for hazard alerts. */
+  category?: string
+}
+
 export interface PlannedRoute {
   mode: RouteMode
   available: true
@@ -63,6 +110,10 @@ export interface PlannedRoute {
   warnings: RouteWarning[]
   reasons: string[]
   long_detour: boolean
+  covered_m: number
+  covered_pct: number
+  steps: RouteStep[]
+  alerts: RouteAlert[]
 }
 
 export interface UnavailableRoute {
@@ -85,12 +136,25 @@ export interface Sun {
   daylight: boolean
 }
 
+export type RainMode = 'auto' | 'on' | 'off'
+
+export interface RouteWeather {
+  rain_mode: RainMode
+  rain_cover: boolean
+  rain_probability: number | null
+  precipitation_mm: number | null
+  source: string | null
+  note: string | null
+}
+
 export interface RoutesResponse {
   start: RoutePoint
   end: RoutePoint
   at: string
   sun: Sun
   step_free: boolean
+  rain: { probability: number | null; forced: boolean; source: string | null } | null
+  weather: RouteWeather
   routes: RouteOption[]
   data_notes: {
     estimated_building_height_pct: number
@@ -100,29 +164,38 @@ export interface RoutesResponse {
   }
 }
 
+/** Coverage of the condition data. Nationwide numbers come from OSM tags; the audited area adds field checks. */
 export interface Coverage {
   segments: number
   network_km: number
   sidewalk_known_pct: number
   dedicated_footpath_pct: number
-  lighting_known_pct: number
-  lighting_audited_segments: number
-  covered_pct: number
-  canopy_pct: number | null
-  green_pct: number
-  steps_pct: number
+  lighting_known_pct?: number
+  lighting_tagged_pct?: number
+  lighting_audited_segments?: number
+  covered_pct?: number
+  covered_tagged_pct?: number
+  canopy_pct?: number | null
+  green_pct?: number
+  steps_pct?: number
   buildings: number
   building_heights_real_pct: number
   places: number
+  lamps?: number
+  crossings?: number
   audited_segments?: number
 }
 
+/** Map coverage (GET /pilot): Malaysia-wide, or the audited area only when the national data isn't built. */
 export interface Pilot {
+  coverage_area: 'malaysia' | 'pilot'
   anchor: Destination
   radius_m: number
+  audited_area: { anchor: Destination; radius_m: number; label: string }
   bounds: { south: number; west: number; north: number; east: number }
   featured: Place[]
   coverage: Coverage
+  audited_coverage: Coverage
   sources: string[]
   built_at: string | null
 }
@@ -144,6 +217,10 @@ export interface Report extends LatLon {
   has_photo: boolean
   source: 'community' | 'operator'
   confirmations: { still_there: number; cleared: number; last_at: string | null }
+  /** Temporary hazard confirmed by 3+ walkers: routes avoid it until an operator decides. */
+  community_confirmed: boolean
+  /** Only on POST /reports: true when the report was added as a vote to a nearby one. */
+  merged?: boolean
 }
 
 export interface ReportEvent {
@@ -158,6 +235,7 @@ export interface CreateReportBody extends LatLon {
   category: string
   description: string | null
   segment_id?: string
+  device?: string
 }
 
 export interface NearSegment {

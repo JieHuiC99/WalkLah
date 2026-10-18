@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { categoryLabel } from '../config/categories'
-import { MAP_CENTER, MAP_STYLE_URL, MAP_ZOOM, MAX_BOUNDS } from '../config/map'
+import { MAP_CENTER, MAP_STYLE_URL, MAP_ZOOM, MAX_BOUNDS, STREET_ZOOM } from '../config/map'
 import { STATUS_META } from '../config/status'
 import { applyWalkLahPalette, FALLBACK_STYLE } from '../map/palette'
 import { ensureReportLayers, REPORTS_LAYER, setReportData, startReportPulse } from '../map/reportLayers'
@@ -12,6 +12,7 @@ import { reportPopupContent } from '../map/reportPopup'
 import {
   ensureOverlayLayers,
   SELECTED_SEGMENTS_LAYER,
+  setHeatData,
   setPilotRing,
   setRouteDisplay,
   setScenarioLink,
@@ -36,6 +37,23 @@ export interface PinMarker extends LatLon {
   label: string
 }
 
+/** The walker's position (blue dot); heading in degrees when the phone knows it. */
+export interface UserLocation extends LatLon {
+  accuracy?: number
+  heading?: number | null
+}
+
+export interface MapViewInfo {
+  center: LatLon
+  /** [west, south, east, north] */
+  bounds: [number, number, number, number]
+  zoom: number
+}
+
+export interface HeatPoint extends LatLon {
+  weight: number
+}
+
 interface Props {
   /** Space taken by UI over the map (sheet, panels), relative to the map's own box. */
   padding: () => PaddingOptions
@@ -44,6 +62,7 @@ interface Props {
   fitKey?: string | null
   reports?: Report[]
   pins?: PinMarker[]
+  /** Team-audited area, drawn as a dashed ring. */
   pilot?: { anchor: LatLon; radiusM: number } | null
   /** When set, map taps call onPick instead of inspecting segments. */
   picking?: boolean
@@ -53,6 +72,12 @@ interface Props {
   link?: { start: LatLon | null; end: LatLon | null } | null
   flyTarget?: FlyTarget | null
   onSegmentTap?: (segmentId: string) => void
+  /** Called after the camera stops moving (search bias, Insights area). */
+  onViewChange?: (view: MapViewInfo) => void
+  userLocation?: UserLocation | null
+  /** Keep the camera on the walker (walk mode). */
+  follow?: boolean
+  heat?: HeatPoint[] | null
   /** Extra overlay controls (rendered top-right under the built-in ones). */
   children?: ReactNode
 }
@@ -60,6 +85,7 @@ interface Props {
 export function MapView(props: Props) {
   const { padding, routes = null, fitKey = null, reports = [], pins = [], pilot = null, picking = false } = props
   const { draft = null, link = null, flyTarget = null, children } = props
+  const { userLocation = null, follow = false, heat = null } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<MapLibreMap | null>(null)
   // Bumped each time a style finishes loading, so overlay data is re-applied after a style swap.
@@ -82,7 +108,7 @@ export function MapView(props: Props) {
       style: MAP_STYLE_URL,
       center: MAP_CENTER,
       zoom: MAP_ZOOM,
-      minZoom: 13,
+      minZoom: 5,
       maxZoom: 19,
       maxBounds: MAX_BOUNDS,
       attributionControl: false,
@@ -162,6 +188,18 @@ export function MapView(props: Props) {
       })
     }
 
+    const reportView = () => {
+      const b = instance.getBounds()
+      const c = instance.getCenter()
+      live.current.onViewChange?.({
+        center: { latitude: c.lat, longitude: c.lng },
+        bounds: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+        zoom: instance.getZoom(),
+      })
+    }
+    instance.on('moveend', reportView)
+    instance.once('load', reportView)
+
     // Keep the canvas sized to its box (the phone frame resizes with the window).
     const observer = new ResizeObserver(() => instance.resize())
     observer.observe(container)
@@ -203,6 +241,50 @@ export function MapView(props: Props) {
     setScenarioLink(map, link?.start ?? null, link?.end ?? null)
   }, [map, styleVersion, link])
 
+  useEffect(() => {
+    if (!map) return
+    setHeatData(map, heat)
+  }, [map, styleVersion, heat])
+
+  // Blue dot for the walker, with a heading wedge when the phone reports one.
+  const userMarker = useRef<maplibregl.Marker | null>(null)
+  useEffect(() => {
+    if (!map) return
+    if (!userLocation) {
+      userMarker.current?.remove()
+      userMarker.current = null
+      return
+    }
+    if (!userMarker.current) {
+      const el = document.createElement('div')
+      el.className = 'user-dot'
+      el.setAttribute('aria-label', 'Your location')
+      el.innerHTML = '<span class="user-dot__heading"></span><span class="user-dot__core"></span>'
+      userMarker.current = new maplibregl.Marker({ element: el }).setLngLat([userLocation.longitude, userLocation.latitude]).addTo(map)
+    }
+    userMarker.current.setLngLat([userLocation.longitude, userLocation.latitude])
+    const el = userMarker.current.getElement()
+    const heading = userLocation.heading
+    el.classList.toggle('has-heading', typeof heading === 'number' && Number.isFinite(heading))
+    el.style.setProperty('--heading', `${heading ?? 0}deg`)
+    if (follow) {
+      map.easeTo({
+        center: [userLocation.longitude, userLocation.latitude],
+        zoom: Math.max(map.getZoom(), 17),
+        padding: live.current.padding(),
+        duration: 600,
+      })
+    }
+  }, [map, userLocation, follow])
+
+  useEffect(
+    () => () => {
+      userMarker.current?.remove()
+      userMarker.current = null
+    },
+    [],
+  )
+
   // Frame all route options whenever a new result arrives.
   useEffect(() => {
     if (!map || !fitKey || !routes) return
@@ -221,7 +303,7 @@ export function MapView(props: Props) {
     if (!map || !flyTarget) return
     map.flyTo({
       center: [flyTarget.longitude, flyTarget.latitude],
-      zoom: Math.max(map.getZoom(), 17),
+      zoom: Math.max(map.getZoom(), STREET_ZOOM),
       padding: live.current.padding(),
       duration: 900,
     })
@@ -285,13 +367,29 @@ export function MapView(props: Props) {
     return () => markers.forEach((m) => m.remove())
   }, [map, pins])
 
-  const recenter = () => map?.flyTo({ center: MAP_CENTER, zoom: MAP_ZOOM, padding: padding() })
+  const recenter = () => {
+    if (!map) return
+    if (userLocation) {
+      map.flyTo({ center: [userLocation.longitude, userLocation.latitude], zoom: STREET_ZOOM, padding: padding() })
+      return
+    }
+    if (!('geolocation' in navigator)) {
+      map.flyTo({ center: MAP_CENTER, zoom: MAP_ZOOM, padding: padding() })
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: STREET_ZOOM, padding: padding() }),
+      () => map.flyTo({ center: MAP_CENTER, zoom: MAP_ZOOM, padding: padding() }),
+      { enableHighAccuracy: true, timeout: 8_000, maximumAge: 60_000 },
+    )
+  }
 
   return (
     <div className="map-view">
       <div ref={containerRef} className="map-view__canvas" />
       <div className="map-fabs">
-        <button type="button" className="map-fab" onClick={recenter} aria-label="Recentre the map">
+        <button type="button" className="map-fab" onClick={recenter} aria-label="Show my location">
           <Icon name="locate" size={20} />
         </button>
         {children}

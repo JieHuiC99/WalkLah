@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Icon } from '../components/icons'
+import { t } from './i18n'
 
 /**
  * WalkLah Go is a phone app. On a laptop or projector it is shown inside a phone frame;
@@ -8,7 +9,7 @@ import { Icon } from '../components/icons'
 export function DeviceFrame({ children }: { children: ReactNode }) {
   return (
     <div className="device-stage">
-      <aside className="device-side" aria-label="About this demo">
+      <aside className="device-side" aria-label={t('About WalkLah Go')}>
         <div className="device-side__brand">
           <span className="brand-tile">
             <Icon name="walk" size={22} />
@@ -17,22 +18,25 @@ export function DeviceFrame({ children }: { children: ReactNode }) {
             Walk<em>Lah</em> <span>Go</span>
           </span>
         </div>
-        <p className="device-side__lead">The walker app — shown as it looks on a phone.</p>
+        <p className="device-side__lead">{t('Know what a walk is like before you start it — anywhere in Malaysia.')}</p>
         <ul className="device-side__list">
           <li>
-            <Icon name="route" size={18} /> Routes between any two points, compared three ways
+            <Icon name="route" size={18} /> {t('Shortest, Practical and Enjoyable routes between any two places')}
           </li>
           <li>
-            <Icon name="sun" size={18} /> Shade by time of day; lighting after dark
+            <Icon name="sun" size={18} /> {t('Shade by time of day, lighting after dark, cover when it rains')}
           </li>
           <li>
-            <Icon name="flag" size={18} /> Reports, confirmed by other walkers
+            <Icon name="navigation" size={18} /> {t('Walk mode with turn-by-turn steps and heads-ups')}
+          </li>
+          <li>
+            <Icon name="flag" size={18} /> {t('Hazards reported and confirmed by other walkers')}
           </li>
         </ul>
         <a className="device-side__link" href="?app=insights">
-          Open WalkLah Insights (operators) <Icon name="arrowRight" size={16} />
+          {t('WalkLah Insights for township operators')} <Icon name="arrowRight" size={16} />
         </a>
-        <p className="device-side__note">On a phone this opens full-screen.</p>
+        <p className="device-side__note">{t('Open this page on your phone to use it full-screen, or install it to your home screen.')}</p>
       </aside>
       <div className="device">
         <div className="device__notch" aria-hidden="true" />

@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
+import type { LatLon } from '../types'
 
-// Hourly forecast for UM from Open-Meteo (free, no key; CC BY 4.0, credited in the app).
-// Context only: it is never used in the route cost.
-const URL =
-  'https://api.open-meteo.com/v1/forecast?latitude=3.118&longitude=101.655' +
-  '&hourly=temperature_2m,uv_index,precipitation_probability,cloud_cover&timezone=Asia%2FKuala_Lumpur&forecast_days=1'
+// Hourly forecast where the walker is looking, from Open-Meteo (free, no key; CC BY 4.0, credited in the app).
+// Shown as context; rain cover in routing uses the backend's own forecast lookup.
+function urlFor(lat: number, lon: number): string {
+  return (
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(1)}&longitude=${lon.toFixed(1)}` +
+    '&hourly=temperature_2m,uv_index,precipitation_probability,cloud_cover&timezone=Asia%2FKuala_Lumpur&forecast_days=1'
+  )
+}
 
 export interface HourWeather {
   temperature: number
@@ -13,12 +17,16 @@ export interface HourWeather {
   cloud: number
 }
 
-export function useWeather(): { byHour: HourWeather[] | null; failed: boolean } {
+export function useWeather(near: LatLon | null): { byHour: HourWeather[] | null; failed: boolean } {
   const [byHour, setByHour] = useState<HourWeather[] | null>(null)
   const [failed, setFailed] = useState(false)
+  // ~10 km cells: panning around a town doesn't refetch.
+  const lat = near ? Math.round(near.latitude * 10) / 10 : null
+  const lon = near ? Math.round(near.longitude * 10) / 10 : null
   useEffect(() => {
+    if (lat === null || lon === null) return
     const controller = new AbortController()
-    fetch(URL, { signal: controller.signal })
+    fetch(urlFor(lat, lon), { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data) => {
         const h = data.hourly
@@ -30,12 +38,13 @@ export function useWeather(): { byHour: HourWeather[] | null; failed: boolean } 
             cloud: h.cloud_cover[i],
           })),
         )
+        setFailed(false)
       })
       .catch(() => {
         if (!controller.signal.aborted) setFailed(true)
       })
     return () => controller.abort()
-  }, [])
+  }, [lat, lon])
   return { byHour, failed }
 }
 

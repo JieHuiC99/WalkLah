@@ -1,4 +1,7 @@
-// Small walker-side helpers: Malaysia time choices, a random device ID and saved preferences.
+// Small walker-side helpers: Malaysia time choices, a random device ID, saved preferences and recent places.
+
+import type { Place, RainMode } from '../types'
+import { t, type Lang } from './i18n'
 
 export type TimeChoice = 'now' | `${number}`
 
@@ -34,7 +37,7 @@ export function hourFor(choice: TimeChoice): number {
 }
 
 export function timeLabel(choice: TimeChoice): string {
-  if (choice === 'now') return 'Now'
+  if (choice === 'now') return t('Now')
   const h = Number(choice)
   const suffix = h < 12 ? 'am' : 'pm'
   return `${h % 12 === 0 ? 12 : h % 12} ${suffix}`
@@ -42,9 +45,9 @@ export function timeLabel(choice: TimeChoice): string {
 
 export function greeting(): string {
   const { hour } = malaysiaParts()
-  if (hour < 12) return 'Good morning!'
-  if (hour < 18) return 'Good afternoon!'
-  return 'Good evening!'
+  if (hour < 12) return t('Good morning!')
+  if (hour < 18) return t('Good afternoon!')
+  return t('Good evening!')
 }
 
 function safeGet(key: string): string | null {
@@ -78,18 +81,49 @@ export interface GoPrefs {
   walker: 'commute' | 'leisure' | null
   stepFree: boolean
   shareStats: boolean
+  rain: RainMode
+  lang: Lang
+}
+
+function defaultLang(): Lang {
+  return typeof navigator !== 'undefined' && /^(ms|id)/i.test(navigator.language) ? 'ms' : 'en'
 }
 
 export function loadPrefs(): GoPrefs {
+  const defaults: GoPrefs = { walker: null, stepFree: false, shareStats: false, rain: 'auto', lang: defaultLang() }
   try {
     const raw = safeGet('walklah.prefs')
-    if (raw) return { walker: null, stepFree: false, shareStats: false, ...JSON.parse(raw) }
+    if (raw) return { ...defaults, ...JSON.parse(raw) }
   } catch {
     // ignore malformed storage
   }
-  return { walker: null, stepFree: false, shareStats: false }
+  return defaults
 }
 
 export function savePrefs(prefs: GoPrefs): void {
   safeSet('walklah.prefs', JSON.stringify(prefs))
+}
+
+const RECENT_KEY = 'walklah.recent'
+const RECENT_MAX = 6
+
+/** Places the walker picked recently (on this phone only). */
+export function loadRecent(): Place[] {
+  try {
+    const raw = safeGet(RECENT_KEY)
+    const list = raw ? (JSON.parse(raw) as Place[]) : []
+    return Array.isArray(list) ? list.slice(0, RECENT_MAX) : []
+  } catch {
+    return []
+  }
+}
+
+export function rememberPlace(place: Place): void {
+  const next = [place, ...loadRecent().filter((p) => p.id !== place.id)].slice(0, RECENT_MAX)
+  safeSet(RECENT_KEY, JSON.stringify(next))
+}
+
+/** "350 m" / "2.4 km" */
+export function distanceLabel(metres: number): string {
+  return metres < 950 ? `${Math.round(metres / 10) * 10} m` : `${(metres / 1000).toFixed(1)} km`
 }

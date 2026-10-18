@@ -4,9 +4,10 @@ import { CategoryIcon } from '../../components/CategoryIcon'
 import { Icon } from '../../components/icons'
 import { StatusBadge } from '../../components/StatusBadge'
 import { CATEGORIES, durationLabel } from '../../config/categories'
-import { DEMO_MODE, DEMO_OBSTACLE } from '../../config/demo'
 import { isInsideDataBounds } from '../../config/map'
 import type { LatLon, NearSegment, Report } from '../../types'
+import { t } from '../i18n'
+import { deviceId } from '../lib'
 
 const MAX_DESCRIPTION = 280
 const HIGHWAY_LABELS: Record<string, string> = {
@@ -20,6 +21,7 @@ const HIGHWAY_LABELS: Record<string, string> = {
   tertiary: 'Road',
   secondary: 'Main road',
   primary: 'Main road',
+  trunk: 'Main road',
 }
 
 interface Props {
@@ -67,7 +69,7 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
   const useMyLocation = () => {
     navigator.geolocation?.getCurrentPosition(
       (pos) => onPoint({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => setError("Couldn't get your location. Tap the map instead."),
+      () => setError(t("Couldn't get your location. Tap the map instead.")),
       { enableHighAccuracy: true, timeout: 10_000 },
     )
   }
@@ -75,9 +77,9 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
-    if (!point) return setError('Tap the map where the problem is.')
-    if (outside) return setError('That spot is outside the WalkLah map.')
-    if (!category) return setError('Choose what the issue is.')
+    if (!point) return setError(t('Tap the map where the problem is.'))
+    if (outside) return setError(t('That spot is outside the area WalkLah covers.'))
+    if (!category) return setError(t('Choose what the issue is.'))
     setSubmitting(true)
     try {
       const report = await api.createReport({
@@ -85,6 +87,7 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
         description: description.trim() || null,
         latitude: point.latitude,
         longitude: point.longitude,
+        device: deviceId(),
         ...(segment && candidates.length > 0 ? { segment_id: segment } : {}),
       })
       await onSubmitted()
@@ -103,24 +106,36 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
   if (submitted) {
     return (
       <div className="go-screen">
-        <h1 className="go-title">Report sent</h1>
+        <h1 className="go-title">{submitted.merged ? t('Already reported') : t('Report sent')}</h1>
         <div className="success-card" role="status">
           <Icon name="check" size={22} />
           <div>
-            <strong>Thanks — it's pending verification.</strong>
-            <p>
-              Other walkers can confirm it, and an operator verifies it before routes avoid it.
-              {submitted.temporary_or_permanent === 'temporary' && ' Temporary issues expire unless someone reconfirms them.'}
-            </p>
+            {submitted.merged ? (
+              <>
+                <strong>{t('Someone reported this here already — we added your confirmation.')}</strong>
+                <p>
+                  {t('{n} walkers say it is still there.', { n: submitted.confirmations.still_there })}{' '}
+                  {submitted.community_confirmed && t('Routes now avoid it until an operator checks it.')}
+                </p>
+              </>
+            ) : (
+              <>
+                <strong>{t("Thanks — it's pending verification.")}</strong>
+                <p>
+                  {t('When 3 walkers confirm a temporary hazard, routes avoid it until an operator checks it.')}
+                  {submitted.temporary_or_permanent === 'temporary' && ` ${t('Temporary issues expire unless someone reconfirms them.')}`}
+                </p>
+              </>
+            )}
             <StatusBadge status={submitted.status} />
           </div>
         </div>
         <div className="button-row">
           <button type="button" className="btn" onClick={onCommunity}>
-            Community updates
+            {t('Community updates')}
           </button>
           <button type="button" className="btn btn--primary" onClick={() => setSubmitted(null)}>
-            Report another
+            {t('Report another')}
           </button>
         </div>
       </div>
@@ -129,42 +144,37 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
 
   return (
     <form className="go-screen" onSubmit={submit} noValidate>
-      <h1 className="go-title">Report an issue</h1>
+      <h1 className="go-title">{t('Report an issue')}</h1>
 
       <div className={`location-card${point ? ' has-point' : ''}${outside ? ' is-invalid' : ''}`}>
         <Icon name="pin" size={20} className="location-card__icon" />
         <div className="location-card__text">
           {point ? (
             <>
-              <strong>{outside ? 'Outside the WalkLah map' : 'Spot marked'}</strong>
-              <span>Drag the pin to adjust</span>
+              <strong>{outside ? t('Outside the area WalkLah covers') : t('Spot marked')}</strong>
+              <span>{t('Drag the pin to adjust')}</span>
             </>
           ) : (
             <>
-              <strong>Tap the map where it is</strong>
-              <span>It's linked to the nearest path</span>
+              <strong>{t('Tap the map where it is')}</strong>
+              <span>{t("It's linked to the nearest path")}</span>
             </>
           )}
         </div>
         {point ? (
-          <button type="button" className="icon-btn" onClick={() => onPoint(null)} aria-label="Clear location">
+          <button type="button" className="icon-btn" onClick={() => onPoint(null)} aria-label={t('Clear location')}>
             <Icon name="x" size={18} />
           </button>
         ) : (
           <button type="button" className="btn btn--small" onClick={useMyLocation}>
-            Here
+            {t('Here')}
           </button>
         )}
       </div>
-      {DEMO_MODE && !point && (
-        <button type="button" className="btn btn--ghost demo-link" onClick={() => onPoint({ ...DEMO_OBSTACLE })}>
-          <Icon name="target" size={16} /> Use rehearsed demo spot
-        </button>
-      )}
 
       {point && !outside && candidates.length > 0 && (
         <fieldset className="go-field">
-          <legend className="go-label">Which path is it on?</legend>
+          <legend className="go-label">{t('Which path is it on?')}</legend>
           <div className="candidate-list">
             {candidates.map((c) => (
               <label key={c.segment_id} className={`candidate${segment === c.segment_id ? ' is-selected' : ''}`}>
@@ -175,10 +185,10 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
                   onChange={() => setSegment(c.segment_id)}
                 />
                 <span>
-                  <strong>{HIGHWAY_LABELS[c.highway] ?? 'Path'}</strong>
+                  <strong>{t(HIGHWAY_LABELS[c.highway] ?? 'Path')}</strong>
                   <span>
                     {c.name ? `${c.name} · ` : ''}
-                    {Math.round(c.distance_m)} m from your pin
+                    {t('{d} m from your pin', { d: Math.round(c.distance_m) })}
                   </span>
                 </span>
               </label>
@@ -188,8 +198,8 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
       )}
 
       <fieldset className="go-field">
-        <legend className="go-label">What's the issue?</legend>
-        <div className="category-tiles" role="radiogroup" aria-label="Category">
+        <legend className="go-label">{t("What's the issue?")}</legend>
+        <div className="category-tiles" role="radiogroup" aria-label={t('Category')}>
           {CATEGORIES.map((c) => (
             <button
               key={c.value}
@@ -201,8 +211,8 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
             >
               <CategoryIcon category={c.value} size={20} />
               <span>
-                {c.label}
-                {durationLabel(c.value) && <small>{durationLabel(c.value)}</small>}
+                {t(c.label)}
+                {durationLabel(c.value) && <small>{t(durationLabel(c.value)!)}</small>}
               </span>
             </button>
           ))}
@@ -211,13 +221,13 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
 
       <label className="go-field">
         <span className="go-label">
-          Description <span className="muted">(optional)</span>
+          {t('Description')} <span className="muted">({t('optional')})</span>
         </span>
         <textarea
           value={description}
           maxLength={MAX_DESCRIPTION}
           rows={2}
-          placeholder="What did you see?"
+          placeholder={t('What did you see?')}
           onChange={(e) => setDescription(e.target.value)}
         />
         <span className="char-count">
@@ -234,15 +244,15 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
       <button type="submit" className="btn btn--primary btn--block btn--large" disabled={submitting}>
         {submitting ? (
           <>
-            <span className="spinner" aria-hidden="true" /> Sending…
+            <span className="spinner" aria-hidden="true" /> {t('Sending…')}
           </>
         ) : (
           <>
-            <Icon name="shoe" size={20} className="accent-icon" /> Submit report
+            <Icon name="shoe" size={20} className="accent-icon" /> {t('Submit report')}
           </>
         )}
       </button>
-      <p className="fine-print center">Photos are on the roadmap; for now, describe what you saw.</p>
+      <p className="fine-print center">{t('Reports are anonymous. Please describe what you saw; photos are not collected.')}</p>
     </form>
   )
 }

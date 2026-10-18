@@ -10,8 +10,10 @@ import type {
   Overview,
   Pilot,
   Place,
+  RainMode,
   Report,
   ReportEvent,
+  ReverseResult,
   RouteMode,
   RoutesResponse,
   ScenarioRequest,
@@ -102,9 +104,33 @@ export const getHealth = () => request<HealthResponse>('/health', { timeoutMs: 5
 
 export const getPilot = () => request<Pilot>('/pilot', { timeoutMs: ROUTE_TIMEOUT_MS })
 
-export async function searchPlaces(q: string): Promise<Place[]> {
-  return (await request<{ places: Place[] }>(`/places?${new URLSearchParams({ q })}`)).places
+/** Places matching q, ranked towards `near` (the map centre or the walker's location). */
+export async function searchPlaces(q: string, near?: { latitude: number; longitude: number } | null): Promise<Place[]> {
+  const params = new URLSearchParams({ q })
+  if (near) {
+    params.set('lat', near.latitude.toFixed(5))
+    params.set('lon', near.longitude.toFixed(5))
+  }
+  return (await request<{ places: Place[] }>(`/places?${params}`)).places
 }
+
+export async function nearbyPlaces(
+  near: { latitude: number; longitude: number },
+  filter: { kind?: string; category?: string },
+  radiusM = 2500,
+): Promise<Place[]> {
+  const params = new URLSearchParams({
+    lat: near.latitude.toFixed(5),
+    lon: near.longitude.toFixed(5),
+    radius_m: String(radiusM),
+  })
+  if (filter.kind) params.set('kind', filter.kind)
+  if (filter.category) params.set('category', filter.category)
+  return (await request<{ places: Place[] }>(`/places/nearby?${params}`)).places
+}
+
+export const reverseLookup = (lat: number, lon: number) =>
+  request<ReverseResult>(`/reverse?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`)
 
 export interface RoutesQuery {
   start: { latitude: number; longitude: number }
@@ -113,6 +139,7 @@ export interface RoutesQuery {
   at?: string
   stepFree: boolean
   shareStats: boolean
+  rain?: RainMode
 }
 
 export function getRoutes(query: RoutesQuery): Promise<RoutesResponse> {
@@ -123,6 +150,7 @@ export function getRoutes(query: RoutesQuery): Promise<RoutesResponse> {
     end_lon: String(query.end.longitude),
     step_free: String(query.stepFree),
     share_stats: String(query.shareStats),
+    rain: query.rain ?? 'auto',
   })
   if (query.at) params.set('at', query.at)
   return request<RoutesResponse>(`/routes?${params}`, { timeoutMs: ROUTE_TIMEOUT_MS })
@@ -159,6 +187,7 @@ export const sendFeedback = (mode: RouteMode, passable: 'yes' | 'partly' | 'no',
 export const getSummary = () => request<InsightsSummary>('/insights/summary')
 
 // ---- operators (WalkLah Insights) ---------------------------------------
+// The operator key is only sent when the server is configured with one (WALKLAH_OPERATOR_KEY).
 
 export const getOverview = (key: string) => request<Overview>('/insights/overview', { operatorKey: key })
 
@@ -209,8 +238,8 @@ export async function getFeedback(key: string): Promise<FeedbackRow[]> {
   return (await request<{ feedback: FeedbackRow[] }>('/insights/feedback', { operatorKey: key })).feedback
 }
 
-export const resetDemo = (key: string) =>
-  request<{ status: string }>('/demo/reset', { method: 'POST', operatorKey: key })
+export const clearAllReports = (key: string) =>
+  request<{ status: string }>('/admin/reset', { method: 'POST', operatorKey: key })
 
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message
