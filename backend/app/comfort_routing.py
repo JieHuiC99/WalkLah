@@ -7,6 +7,9 @@ Three routes are always computed together so they can be compared honestly:
   enjoyable  choice walkers: by day prefers shade (sun position + buildings +
              canopy + covers), green and quiet paths; after dark prefers lit paths
 
+Both comfort routes avoid verified barriers and temporary hazards confirmed by
+several walkers, and prefer covered paths when rain is likely.
+
 Every number is a comfort *estimate* from the data layer; unknowns are reported
 as unknown, never as good.
 """
@@ -18,7 +21,8 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import networkx as nx
 
-from .conditions import CANOPY, CONDITIONS, GREEN, Conditions
+from .conditions import CANOPY, CONDITIONS, COVERED, GREEN, Conditions
+from .directions import Leg, build_alerts, build_steps
 from .graph_service import GraphService
 from .places import PILOT
 from .routing import WALKING_SPEED_MPS, segment_id
@@ -32,6 +36,7 @@ LONG_DETOUR_RATIO = 1.5
 PRACTICAL_STRESS = {"high": 0.6, "medium": 0.15, "unknown": 0.1, "low": 0.0}
 ENJOYABLE_STRESS = {"high": 0.8, "medium": 0.25, "unknown": 0.15, "low": 0.0}
 SUN_PENALTY = 1.2  # extra cost per metre in full sun (by day)
+RAIN_PENALTY = {"practical": 0.6, "enjoyable": 1.0}  # extra cost per uncovered metre when rain is likely
 
 
 class RouteRequestError(ValueError):
@@ -46,6 +51,8 @@ class RouteContext:
     blocked: Set[str]
     step_free: bool
     pending_by_segment: Dict[str, List[Dict]] = field(default_factory=dict)
+    community: Set[str] = field(default_factory=set)  # subset of blocked: confirmed by walkers
+    rain: Optional[Dict] = None  # {"probability": %, "source": ...} when rain cover is on
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -87,7 +94,7 @@ def cost_function(mode: str, ctx: RouteContext, conditions: Conditions) -> Calla
             if seg.sidewalk == "no":
                 multiplier += 0.8
             elif seg.sidewalk == "unknown":
-                multiplier += 0.25
+                multiplier += 0.5 if seg.stress == "high" else 0.25
             if seg.steps:
                 multiplier += 0.15
             if night:
@@ -99,6 +106,8 @@ def cost_function(mode: str, ctx: RouteContext, conditions: Conditions) -> Calla
             else:
                 multiplier += SUN_PENALTY * (1.0 - ctx.shade.get(sid, 0.0))
                 multiplier -= 0.25 * seg.fraction(CANOPY | GREEN)
+        if ctx.rain:
+            multiplier += RAIN_PENALTY[mode] * (1.0 - seg.fraction(COVERED))
         return length * max(multiplier, 0.6)
 
     return cost
@@ -122,15 +131,17 @@ class ComfortRouter:
         return node, distance
 
     def context(self, when: datetime, blocked: Set[str], step_free: bool,
-                pending: List[Dict]) -> RouteContext:
+                pending: List[Dict], community: Optional[Set[str]] = None,
+                rain: Optional[Dict] = None) -> RouteContext:
         self.conditions.load()
         sun = self.shade_model.sun_for(when)
         shade = self.shade_model.segment_shade(when) if sun.daylight else {}
         pending_by_segment: Dict[str, List[Dict]] = {}
         for report in pending:
             pending_by_segment.setdefault(report["segment_id"], []).append(report)
-        return RouteContext(when=when, sun=sun, shade=shade, blocked=set(blocked), step_free=step_free,
-                            pending_by_segment=pending_by_segment)
+        community = set(community or ())
+        return RouteContext(when=when, sun=sun, shade=shade, blocked=set(blocked) | community, step_free=step_free,
+                            pending_by_segment=pending_by_segment, community=community, rain=rain)
 
     def _path(self, start: int, end: int, mode: str, ctx: RouteContext) -> Optional[List[int]]:
         graph = self.graph_service.graph
@@ -143,7 +154,8 @@ class ComfortRouter:
     def summarise(self, path: List[int], mode: str, ctx: RouteContext) -> Dict:
         graph = self.graph_service.graph
         segments, coords = [], []
-        total = shaded_m = 0.0
+        total = shaded_m = covered_m = 0.0
+        legs: List[Leg] = []
         lighting = {"lit_m": 0.0, "unlit_m": 0.0, "unknown_m": 0.0}
         sidewalk_unknown = busy = 0.0
         steps = 0
@@ -156,7 +168,15 @@ class ComfortRouter:
             coords.extend(line if not coords else line[1:])
             seg = self.conditions.segments.get(sid)
             shade = ctx.shade.get(sid) if ctx.sun.daylight else None
+            covered = seg.fraction(COVERED) if seg else 0.0
+            node_crossings = {c["node"]: c["type"] for c in seg.crossings} if seg else {}
+            legs.append(Leg(sid=sid, coords=line, length=length, start_m=total, name=seg.name if seg else None,
+                            highway=seg.highway if seg else "footway", steps=bool(seg and seg.steps),
+                            lit=seg.lit if seg else "unknown", shade=shade, covered=covered,
+                            crossings=node_crossings, end_node=int(v),
+                            reports=ctx.pending_by_segment.get(sid, [])))
             total += length
+            covered_m += length * covered
             if shade is not None:
                 shaded_m += length * shade
             lit = seg.lit if seg else "unknown"
@@ -207,15 +227,33 @@ class ComfortRouter:
             "steps_count": steps,
             "crossings": crossing_counts,
             "warnings": warnings,
+            "covered_m": round(covered_m, 1),
+            "covered_pct": round(100 * covered_m / total, 1) if total else 0.0,
+            "steps": build_steps(legs),
+            "alerts": build_alerts(legs, ctx.sun.daylight, bool(ctx.rain)),
             "segment_ids": [s["id"] for s in segments],
         }
 
     @staticmethod
-    def reasons(route: Dict, shortest: Dict, ctx: RouteContext, affected: int) -> List[str]:
+    def reasons(route: Dict, shortest: Dict, ctx: RouteContext, affected: List[str]) -> List[str]:
         """Plain-language reasons this route differs from the shortest one."""
         out = []
         if route["mode"] != "shortest" and affected:
-            out.append(f"Avoids {affected} verified {'barrier' if affected == 1 else 'barriers'} on the shortest path")
+            community = [s for s in affected if s in ctx.community]
+            verified = len(affected) - len(community)
+            if verified:
+                out.append(f"Avoids {verified} verified {'barrier' if verified == 1 else 'barriers'} on the shortest path")
+            if community:
+                n = len(community)
+                out.append(f"Avoids {n} {'hazard' if n == 1 else 'hazards'} confirmed by walkers")
+        if ctx.rain:
+            p = ctx.rain.get("probability")
+            lead = f"Rain likely ({p:.0f}%)" if p is not None and not ctx.rain.get("forced") else "Rain cover on"
+            if route["mode"] != "shortest":
+                out.append(f"{lead}: {route['covered_pct']:.0f}% covered vs {shortest['covered_pct']:.0f}% "
+                           f"on the shortest route")
+            else:
+                out.append(f"{lead}: {route['covered_pct']:.0f}% covered")
         if route["exposure"] and shortest["exposure"]:
             a, b = route["exposure"]["shade_pct"], shortest["exposure"]["shade_pct"]
             if route["mode"] == "shortest":
@@ -245,13 +283,14 @@ class ComfortRouter:
         return out
 
     def plan(self, start_lat: float, start_lon: float, end_lat: float, end_lon: float, when: datetime,
-             blocked: Set[str], step_free: bool, pending: List[Dict]) -> Dict:
+             blocked: Set[str], step_free: bool, pending: List[Dict], community: Optional[Set[str]] = None,
+             rain: Optional[Dict] = None) -> Dict:
         self.graph_service._ensure()
         start, start_d = self._snap(start_lat, start_lon, "Start")
         end, end_d = self._snap(end_lat, end_lon, "Destination")
         if start == end:
             raise RouteRequestError("Start and destination are the same spot. Pick places further apart.")
-        ctx = self.context(when, blocked, step_free, pending)
+        ctx = self.context(when, blocked, step_free, pending, community, rain)
         graph = self.graph_service.graph
 
         shortest_path = self._path(start, end, "shortest", ctx)
@@ -265,7 +304,7 @@ class ComfortRouter:
         for mode in ("practical", "enjoyable"):
             path = self._path(start, end, mode, ctx)
             if path is None:
-                why = "verified barriers" + (" and steps" if step_free else "")
+                why = "reported barriers" + (" and steps" if step_free else "")
                 routes.append({"mode": mode, "available": False,
                                "reason": f"No walkable alternative — {why} block every path."})
                 continue
@@ -276,7 +315,7 @@ class ComfortRouter:
         for route in routes:
             if route.get("available"):
                 route["affected_segment_ids"] = affected if route["mode"] != "shortest" else []
-                route["reasons"] = self.reasons(route, shortest, ctx, len(affected))
+                route["reasons"] = self.reasons(route, shortest, ctx, affected)
                 route.setdefault("long_detour", False)
                 del route["segment_ids"]
 
@@ -293,6 +332,7 @@ class ComfortRouter:
             "at": local.isoformat(timespec="minutes"),
             "sun": {"altitude": ctx.sun.altitude, "azimuth": ctx.sun.azimuth, "daylight": ctx.sun.daylight},
             "step_free": step_free,
+            "rain": ctx.rain,
             "routes": routes,
             "data_notes": {
                 "estimated_building_height_pct": round(100 * self.shade_model.estimated_height_share(), 1),

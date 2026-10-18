@@ -1,0 +1,71 @@
+"""Per-phone and per-IP limits on community writes (reports and votes), since Insights has no login.
+
+Limits per hour can be changed with WALKLAH_RATE_LIMITS="reports=10,votes=60" or turned off with "off".
+"""
+
+import os
+import threading
+import time
+from collections import defaultdict, deque
+from typing import Deque, Dict, Optional
+
+from fastapi import HTTPException, Request
+
+DEFAULTS = {"reports": 10, "votes": 60}
+WINDOW_S = 3600
+
+
+def limits() -> Optional[Dict[str, int]]:
+    raw = os.environ.get("WALKLAH_RATE_LIMITS", "")
+    if raw.strip().lower() == "off":
+        return None
+    out = dict(DEFAULTS)
+    for part in raw.split(","):
+        if "=" in part:
+            key, value = part.split("=", 1)
+            try:
+                out[key.strip()] = int(value)
+            except ValueError:
+                pass
+    return out
+
+
+class RateLimiter:
+    def __init__(self):
+        self._hits: Dict[str, Deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def hit(self, key: str, limit: int, now: Optional[float] = None) -> bool:
+        """Record one action; False when the key is already at its limit for the window."""
+        now = now or time.monotonic()
+        with self._lock:
+            q = self._hits[key]
+            while q and q[0] <= now - WINDOW_S:
+                q.popleft()
+            if len(q) >= limit:
+                return False
+            q.append(now)
+            return True
+
+    def reset(self) -> None:
+        with self._lock:
+            self._hits.clear()
+
+
+LIMITER = RateLimiter()
+
+
+def enforce(kind: str, request: Request, device: Optional[str]) -> None:
+    configured = limits()
+    if configured is None:
+        return
+    limit = configured.get(kind, DEFAULTS.get(kind, 60))
+    ip = request.client.host if request.client else "unknown"
+    keys = [f"{kind}:ip:{ip}"] + ([f"{kind}:device:{device}"] if device else [])
+    # IPs are shared (campus wifi, mobile carriers), so they get a larger allowance than one phone.
+    for key in keys:
+        allowance = limit * 5 if ":ip:" in key else limit
+        if not LIMITER.hit(key, allowance):
+            what = "reports" if kind == "reports" else "votes"
+            raise HTTPException(status_code=429, detail=f"Too many {what} from this phone in the last hour. "
+                                                        f"Please try again later.")

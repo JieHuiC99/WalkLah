@@ -17,7 +17,7 @@ END = next(d for d in DESTINATIONS if d["id"] == "destination_1")
 def mock_graph_service():
     """GraphService with a small synthetic graph (no network access).
 
-    Node 1 and node 3 sit exactly on the demo destinations, so the
+    Node 1 and node 3 sit exactly on the sample destinations, so the
     nearest-node lookup snaps to them.
     """
     graph = nx.MultiDiGraph()

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from .comfort_routing import MAX_SNAP_M, haversine_m, in_pilot_area
 from .conditions import CONDITIONS
 from .places import FEATURED, PILOT, all_places
+from .region import REGIONS
 from .report_store import now_iso, store
 from .reports_api import active_blocked_segments
 from .routing import DESTINATIONS, parse_segment_id
@@ -163,6 +164,7 @@ def create_insights_router(graph_service) -> APIRouter:
             raise HTTPException(status_code=400, detail=f"Unknown segment IDs: {', '.join(unknown[:5])}")
         saved = store.save_audit(rows)
         CONDITIONS.apply_audit(rows)
+        REGIONS.apply_audit(rows)
         return {"saved": saved, "audited_segments": len(store.audit_rows())}
 
     # ---- operator: hypothetical intervention scenario (P) --------------

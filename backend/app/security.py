@@ -4,15 +4,16 @@ from typing import Optional
 
 from fastapi import Header, HTTPException
 
-# Demo default so a fresh clone works; set WALKLAH_OPERATOR_KEY for anything public.
-DEFAULT_OPERATOR_KEY = "walklah-demo"
 
-
-def operator_key() -> str:
-    return os.environ.get("WALKLAH_OPERATOR_KEY", DEFAULT_OPERATOR_KEY)
+def operator_key() -> Optional[str]:
+    """Insights is open unless WALKLAH_OPERATOR_KEY is set (recommended for a public deployment)."""
+    return os.environ.get("WALKLAH_OPERATOR_KEY") or None
 
 
 def require_operator(x_operator_key: Optional[str] = Header(default=None)) -> None:
-    """Operator-only endpoints (verify, reset, closures, audit, insights) need X-Operator-Key."""
-    if not x_operator_key or not hmac.compare_digest(x_operator_key, operator_key()):
+    """Operator actions (verify, clear, closures, audit) need X-Operator-Key only when a key is configured."""
+    key = operator_key()
+    if key is None:
+        return
+    if not x_operator_key or not hmac.compare_digest(x_operator_key, key):
         raise HTTPException(status_code=401, detail="Operator key required.")

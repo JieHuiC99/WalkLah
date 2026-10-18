@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from .conditions import CONDITIONS
 from .explore_api import create_explore_router
 from .graph_service import GraphService
+from .region import REGIONS
 from .insights_api import create_insights_router
 from .report_store import store
 from .reports_api import active_blocked_segments, create_reports_router
@@ -48,6 +49,7 @@ app.include_router(create_insights_router(GRAPH_SERVICE))
 
 # Team field audits (S · Survey) saved earlier override OSM-derived conditions.
 CONDITIONS.apply_audit(store.audit_rows())
+REGIONS.apply_audit(store.audit_rows())
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -91,8 +93,9 @@ def get_insights_summary():
     return store.summary()
 
 
-@app.post("/demo/reset", dependencies=[Depends(require_operator)])
-def demo_reset():
-    """Demo helper: clear all reports. Operator key required."""
+@app.post("/admin/reset", dependencies=[Depends(require_operator)])
+@app.post("/demo/reset", dependencies=[Depends(require_operator)], include_in_schema=False)
+def clear_reports():
+    """Clear all reports (Insights > Settings). Statistics, feedback and audits are kept."""
     store.clear()
     return {"status": "reset"}

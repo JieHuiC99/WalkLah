@@ -14,7 +14,7 @@ import math
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from shapely import STRtree, convex_hull, multipoints, points
@@ -27,13 +27,22 @@ MAX_SHADOW_M = 150.0
 
 
 class ShadeModel:
-    def __init__(self, conditions: Conditions, buildings_path: Optional[Path] = None):
+    def __init__(self, conditions: Conditions, buildings_path: Optional[Path] = None,
+                 buildings: Optional[Tuple[List[np.ndarray], np.ndarray, np.ndarray]] = None,
+                 latlon: Tuple[float, float] = PILOT_LATLON):
+        """buildings: (rings in the conditions' metric CRS, heights, estimated flags), or read from JSON."""
         self.conditions = conditions
         self.buildings_path = buildings_path or conditions.directory / "buildings.json"
+        self.latlon = latlon
         self._footprints = None
         self._rings = []
         self._heights = None
         self._estimated = None
+        if buildings is not None:
+            rings, heights, estimated = buildings
+            self._rings = self._footprints = list(rings)
+            self._heights = np.asarray(heights, dtype=float)
+            self._estimated = np.asarray(estimated, dtype=bool)
         self._cache: Dict[Tuple[int, int], np.ndarray] = {}
         self._lock = threading.Lock()
 
@@ -68,7 +77,7 @@ class ShadeModel:
         return datetime(year, month, 15, minutes // 60, minutes % 60, tzinfo=MALAYSIA)
 
     def sun_for(self, when: datetime) -> SunPosition:
-        return sun_position(when, *PILOT_LATLON)
+        return sun_position(when, *self.latlon)
 
     def sample_shade(self, when: datetime) -> np.ndarray:
         """Boolean array over every sample point: shaded at this time bucket."""
@@ -79,7 +88,7 @@ class ShadeModel:
                 return self._cache[key]
             flags = self._all_flags()
             shaded = (flags & (COVERED | CANOPY)) > 0
-            sun = sun_position(self.representative_time(key, when.year), *PILOT_LATLON)
+            sun = sun_position(self.representative_time(key, when.year), *self.latlon)
             if sun.daylight:
                 shaded = shaded | self._building_shadow(sun)
             self._cache[key] = shaded
@@ -120,7 +129,7 @@ class ShadeModel:
         """Shaded fraction (0-1) per segment at this time."""
         shaded = self.sample_shade(when)
         c = self.conditions
-        if not len(shaded):
+        if not len(shaded) or not c.seg_order:
             return {}
         totals = np.bincount(c.sample_seg, minlength=len(c.seg_order))
         hits = np.bincount(c.sample_seg, weights=shaded.astype(float), minlength=len(c.seg_order))

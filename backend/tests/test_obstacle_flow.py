@@ -32,7 +32,7 @@ def find_detour_segment():
 
 def test_full_obstacle_lifecycle():
     seg = find_detour_segment()
-    assert seg, "No segment on the baseline route has a detour; change the demo destinations."
+    assert seg, "No segment on the baseline route has a detour; change the sample destinations."
 
     baseline = client.get(ROUTE + "baseline").json()
 

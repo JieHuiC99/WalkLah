@@ -44,6 +44,7 @@ from shapely.ops import unary_union
 BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 from app.graph_service import GraphService  # noqa: E402
+from app.osm_rules import DEDICATED, DEFAULT_BUILDING_HEIGHT_M, parse_height, sidewalk_value, stress_of  # noqa: E402
 from app.routing import segment_id  # noqa: E402
 
 OUT = BACKEND / "comfort"
@@ -51,8 +52,6 @@ RAW = OUT / "osm_raw"
 BBOX = (3.100, 101.637, 3.136, 101.673)  # south, west, north, east (graph area)
 SAMPLE_STEP_M = 8.0
 LAMP_RADIUS_M = 15.0
-DEFAULT_BUILDING_HEIGHT_M = 9.0  # ~3 storeys; flagged as estimated
-STOREY_HEIGHT_M = 3.2
 CANOPY_SHADE_HEIGHT_M = 3.0
 
 OVERPASS = [
@@ -63,11 +62,6 @@ OVERPASS = [
 
 TO_UTM = Transformer.from_crs("EPSG:4326", "EPSG:32647", always_xy=True)
 
-DEDICATED = {"footway", "path", "pedestrian", "steps", "corridor", "cycleway", "track", "bridleway", "elevator"}
-LOW_STRESS = DEDICATED | {"living_street"}
-MEDIUM_STRESS = {"service", "residential", "unclassified", "road"}
-HIGH_STRESS = {"primary", "primary_link", "secondary", "secondary_link", "trunk", "trunk_link", "motorway",
-               "motorway_link"}
 
 QUERIES = {
     "buildings": 'way["building"]({b});relation["building"]({b});',
@@ -103,7 +97,7 @@ def overpass(name: str, refresh: bool) -> dict:
     for attempt in range(4):
         for url in OVERPASS:
             try:
-                req = urllib.request.Request(url, data=data, headers={"User-Agent": "WalkLah-prototype/0.2 (buildathon)"})
+                req = urllib.request.Request(url, data=data, headers={"User-Agent": "WalkLah/1.0"})
                 with urllib.request.urlopen(req, timeout=180) as resp:
                     text = resp.read().decode("utf-8")
                 parsed = json.loads(text)
@@ -142,22 +136,6 @@ def element_polygons(el: dict) -> list[Polygon]:
     return polys
 
 
-def parse_height(tags: dict) -> tuple[float, bool]:
-    """Building height in metres and whether it is estimated."""
-    for key in ("height", "building:height"):
-        raw = tags.get(key)
-        if raw:
-            try:
-                return float(str(raw).replace("m", "").strip().split(";")[0]), False
-            except ValueError:
-                pass
-    levels = tags.get("building:levels")
-    if levels:
-        try:
-            return max(1.0, float(str(levels).split(";")[0])) * STOREY_HEIGHT_M, False
-        except ValueError:
-            pass
-    return DEFAULT_BUILDING_HEIGHT_M, True
 
 
 def highway_of(data: dict) -> str:
@@ -167,14 +145,6 @@ def highway_of(data: dict) -> str:
     return str(hw)
 
 
-def stress_of(highway: str) -> str:
-    if highway in LOW_STRESS:
-        return "low"
-    if highway in HIGH_STRESS:
-        return "high"
-    if highway in MEDIUM_STRESS or highway.endswith("_link"):
-        return "medium"
-    return "medium" if highway == "tertiary" else "unknown"
 
 
 def osm_ids(data: dict) -> list[int]:
@@ -189,16 +159,6 @@ def osm_ids(data: dict) -> list[int]:
     return out
 
 
-def sidewalk_value(tags: dict) -> str | None:
-    """'yes' / 'no' / None from OSM sidewalk tagging."""
-    values = [tags.get(k) for k in ("sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right") if tags.get(k)]
-    if not values:
-        return None
-    if any(v in ("both", "left", "right", "yes", "separate") for v in values):
-        return "yes"
-    if all(v in ("no", "none") for v in values):
-        return "no"
-    return None
 
 
 # ---------------------------------------------------------------------------

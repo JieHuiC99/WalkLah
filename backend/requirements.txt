@@ -12,3 +12,6 @@ pyproj==3.8.0
 scikit-learn==1.9.1
 pytest==9.1.1
 httpx==0.28.1
+scipy==1.18.1
+# Tree canopy (Meta 1 m around UM, ESA WorldCover elsewhere); routes still work without it.
+rasterio==1.5.2

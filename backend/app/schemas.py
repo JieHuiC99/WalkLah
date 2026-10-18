@@ -39,6 +39,7 @@ class ReportCreate(BaseModel):
     latitude: float
     longitude: float
     temporary_or_permanent: Optional[Literal["temporary", "permanent"]] = None
+    device: Optional[str] = Field(default=None, min_length=8, max_length=64)
 
 
 class VerifyRequest(BaseModel):

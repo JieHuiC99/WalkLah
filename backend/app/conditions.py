@@ -104,6 +104,8 @@ class Conditions:
         for index, seg in enumerate(segments):
             layer.segments[seg.id] = seg
             layer.seg_order.append(seg.id)
+        if not segments:
+            return layer
         layer.sample_x = np.concatenate([s.xs for s in segments])
         layer.sample_y = np.concatenate([s.ys for s in segments])
         layer.sample_seg = np.concatenate(

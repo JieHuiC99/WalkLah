@@ -1,3 +1,4 @@
+import math
 import os
 import sqlite3
 import threading
@@ -5,12 +6,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-# Reports, their verification history and community confirmations.
-# SQLite so a server restart (or --reload) no longer wipes the demo data.
+# Reports, their verification history and community confirmations, kept in SQLite.
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "walklah.db"
 
 # Temporary hazards go stale unless someone reconfirms them (proposal: expires_at).
 TEMPORARY_CATEGORIES = {"blocked_walkway", "blocked_path", "flooding", "flooded_path", "construction", "lighting_out"}
+
+# Community-confirmed hazards: a temporary hazard that at least this many different
+# phones say is still there (and more say "still there" than "cleared") is avoided
+# by Practical/Enjoyable routes even before an operator verifies it.
+COMMUNITY_CONFIRMATIONS = 3
+# A new report of the same category this close to an open one is merged into it as a vote.
+DUPLICATE_RADIUS_M = 30.0
 
 
 def expiry_hours() -> float:
@@ -30,7 +37,8 @@ CREATE TABLE IF NOT EXISTS reports (
     temporary_or_permanent TEXT NOT NULL,
     expires_at TEXT,
     photo_path TEXT,
-    source TEXT NOT NULL DEFAULT 'community'
+    source TEXT NOT NULL DEFAULT 'community',
+    device TEXT
 );
 CREATE TABLE IF NOT EXISTS verification_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +129,9 @@ class ReportStore:
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(SCHEMA)
+        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(reports)")}
+        if "device" not in columns:  # databases created before device-based merging
+            self._db.execute("ALTER TABLE reports ADD COLUMN device TEXT")
         self._db.commit()
 
     # ---- helpers -------------------------------------------------------
@@ -131,6 +142,7 @@ class ReportStore:
             " FROM confirmations WHERE report_num = ?",
             (row["num"],),
         ).fetchone()
+        still, cleared = counts["still"] or 0, counts["cleared"] or 0
         return {
             "id": _report_id(row["num"]),
             "segment_id": row["segment_id"],
@@ -145,11 +157,18 @@ class ReportStore:
             "has_photo": bool(row["photo_path"]),
             "source": row["source"],
             "confirmations": {
-                "still_there": counts["still"] or 0,
-                "cleared": counts["cleared"] or 0,
+                "still_there": still,
+                "cleared": cleared,
                 "last_at": counts["last"],
             },
+            "community_confirmed": self._community_confirmed(row["status"], row["temporary_or_permanent"],
+                                                              still, cleared),
         }
+
+    @staticmethod
+    def _community_confirmed(status: str, duration: str, still: int, cleared: int) -> bool:
+        return (status == "pending" and duration == "temporary" and still >= COMMUNITY_CONFIRMATIONS
+                and still > cleared)
 
     def _event(self, num: int, event_type: str, role: str, evidence: Optional[str] = None,
                when: Optional[str] = None) -> None:
@@ -175,6 +194,7 @@ class ReportStore:
         photo_path: Optional[str] = None,
         source: str = "community",
         status: str = "pending",
+        device: Optional[str] = None,
     ) -> Dict:
         """Create a report with server-assigned ID, timestamp and (for temporary hazards) expiry."""
         duration = temporary_or_permanent or duration_for(category)
@@ -183,15 +203,18 @@ class ReportStore:
         with self._lock:
             cur = self._db.execute(
                 "INSERT INTO reports (segment_id, category, description, status, latitude, longitude, created_at,"
-                " temporary_or_permanent, expires_at, photo_path, source) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " temporary_or_permanent, expires_at, photo_path, source, device) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (segment_id, category, description, status, latitude, longitude, now_iso(created), duration,
-                 expires, photo_path, source),
+                 expires, photo_path, source, device),
             )
             num = cur.lastrowid
             if source == "operator":
                 self._event(num, "operator_closure", "operator")
             else:
                 self._event(num, "reported", "community")
+                if device:  # the reporter counts as the first "still there"
+                    self._db.execute("INSERT OR IGNORE INTO confirmations VALUES (?,?,1,?)",
+                                     (num, device, now_iso(created)))
             self._db.commit()
             return self.get(_report_id(num))
 
@@ -282,6 +305,45 @@ class ReportStore:
                 self._db.commit()
             return len(rows)
 
+    def find_duplicate(self, category: str, latitude: float, longitude: float) -> Optional[Dict]:
+        """An open report of the same category within DUPLICATE_RADIUS_M, nearest first."""
+        dlat = DUPLICATE_RADIUS_M / 110_540
+        dlon = DUPLICATE_RADIUS_M / (111_320 * max(0.2, math.cos(math.radians(latitude))))
+        with self._lock:
+            self.expire_stale()
+            rows = self._db.execute(
+                "SELECT * FROM reports WHERE category = ? AND status IN ('pending', 'verified_active')"
+                " AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
+                (category, latitude - dlat, latitude + dlat, longitude - dlon, longitude + dlon),
+            ).fetchall()
+            if not rows:
+                return None
+            row = min(rows, key=lambda r: (r["latitude"] - latitude) ** 2 + (r["longitude"] - longitude) ** 2)
+            return self._row_to_report(row)
+
+    def community_blocked_segment_ids(self) -> Set[str]:
+        """Segments of temporary hazards confirmed by enough walkers (and not yet decided by an operator)."""
+        with self._lock:
+            self.expire_stale()
+            rows = self._db.execute(
+                "SELECT r.segment_id FROM reports r JOIN confirmations c ON c.report_num = r.num"
+                " WHERE r.status = 'pending' AND r.temporary_or_permanent = 'temporary'"
+                " GROUP BY r.num HAVING SUM(c.still_there = 1) >= ?"
+                " AND SUM(c.still_there = 1) > SUM(c.still_there = 0)",
+                (COMMUNITY_CONFIRMATIONS,),
+            ).fetchall()
+            return {r["segment_id"] for r in rows}
+
+    def recent_count(self, table: str, device: str, minutes: int = 60) -> int:
+        """Reports or votes from one phone in the last N minutes (rate limiting)."""
+        since = now_iso(datetime.now(timezone.utc) - timedelta(minutes=minutes))
+        with self._lock:
+            if table == "reports":
+                sql = "SELECT COUNT(*) FROM reports WHERE device = ? AND created_at >= ?"
+            else:
+                sql = "SELECT COUNT(*) FROM confirmations WHERE device = ? AND time >= ?"
+            return int(self._db.execute(sql, (device, since)).fetchone()[0])
+
     def verified_segment_ids(self) -> Set[str]:
         """Return segment_ids of verified_active reports."""
         with self._lock:
@@ -367,7 +429,7 @@ class ReportStore:
             return [dict(r) for r in self._db.execute("SELECT * FROM segment_audit ORDER BY segment_id").fetchall()]
 
     def clear(self) -> None:
-        """Remove all reports (demo reset). Route statistics, feedback and audits are kept."""
+        """Remove all reports. Route statistics, feedback and audits are kept."""
         with self._lock:
             self._db.executescript(
                 "DELETE FROM confirmations; DELETE FROM verification_events; DELETE FROM reports;"

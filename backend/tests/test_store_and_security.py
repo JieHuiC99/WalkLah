@@ -8,7 +8,7 @@ from app.report_store import ReportStore, store
 from tests.conftest import OPERATOR
 
 client = TestClient(app)
-DEMO_SPOT = {"latitude": 3.11916, "longitude": 101.65565}
+SPOT = {"latitude": 3.11916, "longitude": 101.65565}
 
 
 @pytest.fixture(autouse=True)
@@ -54,11 +54,11 @@ def test_confirmations_one_vote_per_device_and_extend_expiry():
     assert updated["confirmations"]["still_there"] == 1
     assert updated["confirmations"]["cleared"] == 1
     assert updated["expires_at"] >= before
-    assert updated["status"] == "pending"  # votes never change status or routing on their own
+    assert updated["status"] == "pending"  # votes never change the status; only an operator does
 
 
 def test_api_confirm_and_history():
-    created = client.post("/reports", json={"category": "blocked_walkway", **DEMO_SPOT}).json()
+    created = client.post("/reports", json={"category": "blocked_walkway", **SPOT}).json()
     r = client.post(f"/reports/{created['id']}/confirm", json={"still_there": True, "device": "phone-12345678"})
     assert r.status_code == 200 and r.json()["confirmations"]["still_there"] == 1
     assert client.post("/reports/report_999/confirm", json={"still_there": True, "device": "phone-12345678"}).status_code == 404
@@ -67,11 +67,11 @@ def test_api_confirm_and_history():
 
 
 def test_operator_endpoints_need_key():
-    assert client.post("/demo/reset").status_code == 401
-    assert client.post("/demo/reset", headers={"X-Operator-Key": "wrong"}).status_code == 401
-    assert client.post("/demo/reset", headers=OPERATOR).status_code == 200
+    assert client.post("/admin/reset").status_code == 401
+    assert client.post("/admin/reset", headers={"X-Operator-Key": "wrong"}).status_code == 401
+    assert client.post("/admin/reset", headers=OPERATOR).status_code == 200
 
-    closure = {"category": "construction", "description": "Drain works", **DEMO_SPOT}
+    closure = {"category": "construction", "description": "Drain works", **SPOT}
     assert client.post("/operator/closures", json=closure).status_code == 401
     r = client.post("/operator/closures", json=closure, headers=OPERATOR)
     assert r.status_code == 201
@@ -85,5 +85,56 @@ def test_reports_far_from_any_path_are_rejected():
 
 
 def test_long_description_is_rejected():
-    r = client.post("/reports", json={"category": "blocked_walkway", "description": "x" * 281, **DEMO_SPOT})
+    r = client.post("/reports", json={"category": "blocked_walkway", "description": "x" * 281, **SPOT})
     assert r.status_code == 422
+
+
+def test_duplicate_report_merges_into_a_vote():
+    first = client.post("/reports", json={"category": "flooding", "device": "phone-aaaaaaaa", **SPOT}).json()
+    assert first["merged"] is False and first["confirmations"]["still_there"] == 1  # reporter counts once
+    nearby = {"latitude": SPOT["latitude"] + 0.0001, "longitude": SPOT["longitude"]}  # ~11 m away
+    second = client.post("/reports", json={"category": "flooding", "device": "phone-bbbbbbbb", **nearby}).json()
+    assert second["merged"] is True and second["id"] == first["id"]
+    assert second["confirmations"]["still_there"] == 2
+    other = client.post("/reports", json={"category": "missing_sidewalk", "device": "phone-bbbbbbbb", **nearby}).json()
+    assert other["merged"] is False and other["id"] != first["id"]
+    assert len(store.list()) == 2
+
+
+def test_community_confirmed_hazard_blocks_until_operator_decides():
+    report = store.create("1-2", "blocked_walkway", None, 3.118, 101.656, device="phone-00000001")
+    store.confirm(report["id"], "phone-00000002", True)
+    assert store.community_blocked_segment_ids() == set()  # 2 walkers: not yet
+    updated = store.confirm(report["id"], "phone-00000003", True)
+    assert updated["community_confirmed"] is True
+    assert store.community_blocked_segment_ids() == {"1-2"}
+    store.confirm(report["id"], "phone-00000004", False)
+    store.confirm(report["id"], "phone-00000005", False)
+    store.confirm(report["id"], "phone-00000006", False)
+    assert store.community_blocked_segment_ids() == set()  # as many "cleared" as "still there"
+    store.confirm(report["id"], "phone-00000007", True)
+    assert store.community_blocked_segment_ids() == {"1-2"}
+    store.update_status(report["id"], "verified_cleared", evidence="site visit")
+    assert store.community_blocked_segment_ids() == set()  # operator decision wins
+    permanent = store.create("2-3", "missing_sidewalk", None, 3.118, 101.656)
+    for i in range(4):
+        store.confirm(permanent["id"], f"phone-1000000{i}", True)
+    assert store.community_blocked_segment_ids() == set()  # only temporary hazards
+
+
+def test_rate_limit(monkeypatch):
+    from app.rate_limit import LIMITER
+
+    monkeypatch.setenv("WALKLAH_RATE_LIMITS", "reports=2,votes=60")
+    LIMITER.reset()
+    spots = [{"latitude": SPOT["latitude"] + i * 0.001, "longitude": SPOT["longitude"]} for i in range(3)]
+    codes = [client.post("/reports", json={"category": "construction", "device": "phone-ratelimit",
+                                           **s}).status_code for s in spots]
+    assert codes == [201, 201, 429]
+    LIMITER.reset()
+
+
+def test_insights_open_without_a_configured_key(monkeypatch):
+    monkeypatch.delenv("WALKLAH_OPERATOR_KEY", raising=False)
+    assert client.post("/admin/reset").status_code == 200
+    assert client.get("/insights/overview").status_code == 200
