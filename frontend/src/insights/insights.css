@@ -538,6 +538,7 @@
   min-height: 32px;
   padding: 0 12px;
   font-size: 0.8125rem;
+  white-space: nowrap;
 }
 
 .stage-subhead {
