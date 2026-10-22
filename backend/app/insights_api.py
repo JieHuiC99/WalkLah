@@ -113,7 +113,7 @@ def parse_time(value: str) -> datetime:
 
 def create_insights_router(graph_service) -> APIRouter:
     router = APIRouter()
-    places_index = PlaceIndex(REGIONS.db)
+    places_index = PlaceIndex.from_env(REGIONS.db, REGIONS.street_lines)
 
     # ---- public: walk feedback ---------------------------------------
 

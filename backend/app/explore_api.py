@@ -18,7 +18,7 @@ PILOT_BOUNDS = {"south": 3.100, "west": 101.637, "north": 3.136, "east": 101.673
 MALAYSIA_BOUNDS = {"south": 0.8, "west": 99.5, "north": 7.5, "east": 119.5}
 BOUNDS = PILOT_BOUNDS  # kept for callers of the pilot graph (insights scenarios)
 
-PLACES = PlaceIndex(REGIONS.db)
+PLACES = PlaceIndex.from_env(REGIONS.db, REGIONS.street_lines)
 
 
 def map_bounds() -> dict:

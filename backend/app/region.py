@@ -523,6 +523,20 @@ class RegionService:
         ranked = sorted(best.items(), key=lambda kv: kv[1][0])[:limit]
         return [{"segment_id": sid, "distance_m": round(d, 1), **info} for sid, (d, info) in ranked]
 
+    def street_lines(self, lat: float, lon: float, pad: float = 0.0006):
+        """(name, lon/lat vertices) of named paths in the loaded packs around a point (reverse lookup)."""
+        if self.packs is None:
+            return
+        x0, y0 = tile_key(lat - pad, lon - pad)
+        x1, y1 = tile_key(lat + pad, lon + pad)
+        keys = [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1) if self.packs.has((x, y))]
+        for tile in self.tiles(keys, crs_for(lon)):
+            for sid, edge in tile.edges.items():
+                name, coords = tile.segments[sid].name, edge["coords"]
+                if name and (coords[:, 0].max() >= lon - pad and coords[:, 0].min() <= lon + pad
+                             and coords[:, 1].max() >= lat - pad and coords[:, 1].min() <= lat + pad):
+                    yield name, coords
+
     def edge_info(self, sid: str) -> Optional[Dict]:
         """Name and midpoint (lat, lon) of a path segment, or None if it is not in the network."""
         try:

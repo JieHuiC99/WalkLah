@@ -7,6 +7,7 @@ from app.comfort_routing import ComfortRouter
 from app.region import OutsideCoverage, RegionService
 from app.region_db import RegionDB
 from app.tile_export import export_packs
+from app.search import search_terms
 from app.tile_pack import PackSource
 from tests.test_region import D, LAT0, LON0, NODES, NOON, build_db
 
@@ -76,3 +77,15 @@ def test_trip_outside_covered_areas(services):
     _, from_packs = services
     with pytest.raises(OutsideCoverage, match="doesn't cover this area yet.*Puchong"):
         from_packs.region_for_trip(5.41, 100.33, 5.42, 100.34)
+
+
+def test_street_names_from_packs(services):
+    _, from_packs = services
+    names = {name for name, _ in from_packs.street_lines(LAT0 + 0.00002, LON0 + 1.2 * D)}
+    assert "Jalan Puteri 1/2" in names
+
+
+def test_search_terms_for_postgres_copy():
+    terms = search_terms("SP22 Kinrara BK 5", None, "Bandar Kinrara, Puchong", "station stesen LRT").split()
+    assert {"kinrara", "bk5", "puchong", "stesen"} <= set(terms) and len(terms) == len(set(terms))
+    assert "cafe" in search_terms("Café Ümlaut", None, None, None)  # accents folded like the SQLite index
