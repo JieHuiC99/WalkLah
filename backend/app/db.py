@@ -96,6 +96,9 @@ class PostgresDatabase(Database):
             user=unquote(u.username or ""), password=unquote(u.password or ""), host=u.hostname,
             port=u.port or 5432, database=(u.path or "/postgres").lstrip("/") or "postgres",
             ssl_context=context, timeout=20)
+        # Every statement commits on its own: an open transaction would pin one of the pooler's few
+        # connections for as long as a serverless instance stays alive.
+        self._conn.autocommit = True
 
     @staticmethod
     def translate(sql: str) -> str:
