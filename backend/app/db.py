@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import ssl
+import tempfile
 from pathlib import Path
 from typing import Any, Iterator, List, Optional, Sequence
 from urllib.parse import unquote, urlparse
@@ -142,4 +143,7 @@ def connect(path: Optional[str] = None) -> Database:
         return PostgresDatabase(target)
     from .report_store import DEFAULT_DB
 
-    return SQLiteDatabase(path or os.environ.get("WALKLAH_DB", str(DEFAULT_DB)))
+    default = DEFAULT_DB
+    if os.environ.get("VERCEL"):  # read-only bundle: only /tmp is writable (and is not kept between instances)
+        default = Path(tempfile.gettempdir()) / "walklah.db"
+    return SQLiteDatabase(path or os.environ.get("WALKLAH_DB", str(default)))

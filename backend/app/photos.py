@@ -13,6 +13,7 @@ import binascii
 import os
 import re
 import secrets
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -44,6 +45,8 @@ def photo_dir() -> Path:
     db = os.environ.get("WALKLAH_DB")
     if db and db != ":memory:":
         return Path(db).resolve().parent / "photos"
+    if os.environ.get("VERCEL"):  # read-only bundle: only /tmp is writable
+        return Path(tempfile.gettempdir()) / "walklah-photos"
     return BACKEND_DIR / "data" / "photos"
 
 
