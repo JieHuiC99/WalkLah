@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,9 +33,13 @@ async def json_errors(request: Request, call_next):
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
+# Local dev servers, plus the deployed site(s) from WALKLAH_CORS_ORIGINS (comma-separated).
+CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"] + [
+    origin.strip().rstrip("/") for origin in os.environ.get("WALKLAH_CORS_ORIGINS", "").split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -132,6 +132,11 @@ def test_rate_limit(monkeypatch):
                                            **s}).status_code for s in spots]
     assert codes == [201, 201, 429]
     LIMITER.reset()
+    # A fresh API instance (empty memory) still sees this phone's reports in the database.
+    late = {"latitude": SPOT["latitude"] + 0.004, "longitude": SPOT["longitude"]}
+    assert client.post("/reports", json={"category": "construction", "device": "phone-ratelimit",
+                                         **late}).status_code == 429
+    LIMITER.reset()
 
 
 def test_insights_open_without_a_configured_key(monkeypatch):

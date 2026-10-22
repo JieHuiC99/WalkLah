@@ -1,15 +1,10 @@
-# Running the API and tests (tested with Python 3.14 on Windows). No compiled GIS libraries are
-# needed at runtime (app/geo.py does the geometry with numpy/scipy), so this also works on
-# laptops where Windows Smart App Control blocks PROJ/GEOS DLLs.
+# What the API needs to run (also what Vercel installs). Tests and local extras: requirements-dev.txt.
+# No compiled GIS libraries are needed at runtime (app/geo.py does the geometry with numpy/scipy),
+# so this also works on laptops where Windows Smart App Control blocks PROJ/GEOS DLLs.
 fastapi==0.143.3
 uvicorn[standard]==0.54.0
 networkx==3.7
 numpy==2.5.4
 scipy==1.18.1
-pytest==9.1.1
-httpx==0.28.1
 # Postgres when deployed (DATABASE_URL); pure Python, no compiled libraries.
 pg8000>=1.31
-# Optional: reads the 1 m Meta canopy around UM and fetches new ESA WorldCover blocks.
-# Without it, routes use cached WorldCover blocks and say when canopy is unavailable.
-rasterio==1.5.2

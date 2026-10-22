@@ -151,6 +151,8 @@ def create_explore_router(graph_service) -> APIRouter:
             "sources": (national.get("sources") or []) + [s for s in CONDITIONS.meta.get("sources", [])
                                                           if s not in (national.get("sources") or [])],
             "built_at": national.get("built_at") or CONDITIONS.meta.get("built_at"),
+            # Deployed API: routing covers these cities only (empty list: everywhere in Malaysia).
+            "covered_areas": REGIONS.covered_boxes(),
         }
 
     @router.get("/segments/near")

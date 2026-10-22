@@ -214,4 +214,9 @@ class PackSource:
         return any(w <= lon <= e and s <= lat <= n for w, s, e, n in self.index["areas"].values())
 
     def area_names(self) -> List[str]:
-        return [self.index.get("labels", {}).get(name, name) for name in self.index["areas"]]
+        return [area["name"] for area in self.areas()]
+
+    def areas(self) -> List[Dict]:
+        labels = self.index.get("labels", {})
+        return [{"name": labels.get(key, key), "west": w, "south": s, "east": e, "north": n}
+                for key, (w, s, e, n) in self.index["areas"].items()]

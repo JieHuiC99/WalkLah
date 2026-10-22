@@ -4,7 +4,7 @@
 ```
 cd backend
 py -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt   # requirements.txt alone: just the API
 $env:WALKLAH_MY_DATA = "C:\walklah-data"      # folder with walklah_my.sqlite (see below); optional
 .venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
@@ -40,6 +40,23 @@ $env:WALKLAH_MY_DATA = "C:\walklah-data"; .venv\Scripts\python.exe scripts\prefe
 - Build of 18 Oct 2026: 3.55 M path segments (419,565 km), 1.71 M buildings, 671,090 places
   (203,121 OSM + 467,969 Overture after de-duplication), 65,894 crossings, 2,488 street lamps.
 - Search aliases can be recomputed without a rebuild: `scripts\build_malaysia.py --refresh-aliases --out …`.
+
+## Deployed API (Vercel + Supabase, free tiers)
+The 1.6 GB database does not fit a serverless function, so the deployed API uses pre-built pieces:
+- **Routing tiles** for Klang Valley, Penang, Johor Bahru, Ipoh, Kota Kinabalu, Kuching and Melaka:
+  `scripts\export_tiles.py C:\walklah-data\packs` (about 4 min, about 165 MB), uploaded to the public
+  Supabase Storage bucket `tiles`. `WALKLAH_TILES_URL` points the API at them (a local folder works too);
+  trips elsewhere get "WalkLah doesn't cover this area yet", and `/pilot` lists `covered_areas`.
+- **Database**: `DATABASE_URL` (Supabase pooler, `postgresql://…`) switches reports, votes, audits and
+  statistics to Postgres (`app/db.py`, pg8000), and search to a Postgres copy of the covered cities' places
+  (`scripts\upload_places.py`).
+- **Photos**: with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`, uploads go to the public bucket `photos`.
+- **CORS**: `WALKLAH_CORS_ORIGINS` = the site's URL (comma-separated for several).
+- Upload scripts read secrets from `backend\.env.deploy` (git-ignored; `DATABASE_URL`, `SUPABASE_URL`,
+  `SUPABASE_SERVICE_KEY`) and never print them. The service key is server-only: never put it in a `VITE_*`
+  variable.
+- Vercel runs `app/main.py` with `requirements.txt` (runtime only); `vercel.json` leaves tests, scripts and
+  docs out of the function but keeps the committed UM graph.
 
 ## How it works
 - `scripts/build_malaysia.py` (pyosmium): pass 1 finds path junctions; pass 2 writes walkable edges split at

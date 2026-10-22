@@ -1,6 +1,8 @@
 """Per-phone and per-IP limits on community writes (reports and votes), since Insights has no login.
 
 Limits per hour can be changed with WALKLAH_RATE_LIMITS="reports=10,votes=60" or turned off with "off".
+Counts are kept in memory and, per phone, also checked against the database, because a
+deployed API runs as several short-lived instances that do not share memory.
 """
 
 import os
@@ -63,9 +65,15 @@ def enforce(kind: str, request: Request, device: Optional[str]) -> None:
     ip = request.client.host if request.client else "unknown"
     keys = [f"{kind}:ip:{ip}"] + ([f"{kind}:device:{device}"] if device else [])
     # IPs are shared (campus wifi, mobile carriers), so they get a larger allowance than one phone.
+    what = "reports" if kind == "reports" else "votes"
+    too_many = HTTPException(status_code=429, detail=f"Too many {what} from this phone in the last hour. "
+                                                     f"Please try again later.")
+    if device and kind in ("reports", "votes"):
+        from .report_store import store
+
+        if store.recent_count("reports" if kind == "reports" else "confirmations", device) >= limit:
+            raise too_many
     for key in keys:
         allowance = limit * 5 if ":ip:" in key else limit
         if not LIMITER.hit(key, allowance):
-            what = "reports" if kind == "reports" else "votes"
-            raise HTTPException(status_code=429, detail=f"Too many {what} from this phone in the last hour. "
-                                                        f"Please try again later.")
+            raise too_many

@@ -369,6 +369,10 @@ class RegionService:
         """Names of the cities WalkLah routes in (deployed packs only; empty means all of Malaysia)."""
         return self.packs.area_names() if self.packs is not None else []
 
+    def covered_boxes(self) -> List[Dict]:
+        """[{name, west, south, east, north}] of the covered cities (deployed packs only)."""
+        return self.packs.areas() if self.packs is not None else []
+
     # -- tiles and regions ------------------------------------------------
     def _tile_data(self, key: Tuple[int, int]) -> Optional[TileData]:
         if self.packs is not None:
