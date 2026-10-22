@@ -1,12 +1,14 @@
 import math
 import os
-import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-# Reports, their verification history and community confirmations, kept in SQLite.
+from . import db as database
+
+# Reports, their verification history and community confirmations: SQLite locally, Postgres when deployed
+# (DATABASE_URL, see app/db.py).
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "walklah.db"
 
 # Temporary hazards go stale unless someone reconfirms them (proposal: expires_at).
@@ -94,6 +96,10 @@ CREATE TABLE IF NOT EXISTS segment_audit (
 
 LOG_RETENTION_DAYS = 30
 
+# Vote counts written so they run on SQLite and Postgres alike.
+STILL = "CASE WHEN still_there = 1 THEN 1 ELSE 0 END"
+CLEARED = "CASE WHEN still_there = 0 THEN 1 ELSE 0 END"
+
 
 def now_iso(now: Optional[datetime] = None) -> str:
     return (now or datetime.now(timezone.utc)).isoformat().replace("+00:00", "Z")
@@ -119,34 +125,29 @@ def _expiry(now: Optional[datetime] = None) -> str:
 
 
 class ReportStore:
-    """Thread-safe SQLite store for obstacle reports.
+    """Thread-safe store for obstacle reports (SQLite or Postgres).
 
     The public methods keep the shape of the original in-memory store, so the
     API and routing code did not have to change.
     """
 
     def __init__(self, path: Optional[str] = None):
-        self.path = path or os.environ.get("WALKLAH_DB", str(DEFAULT_DB))
-        if self.path != ":memory:":
-            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        self._db = sqlite3.connect(self.path, check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
+        self._db = database.connect(path)
         self._db.executescript(SCHEMA)
         # Columns added after the first release of the database file.
         for table, column, kind in (("reports", "device", "TEXT"), ("route_logs", "cell_lat", "REAL"),
                                     ("route_logs", "cell_lon", "REAL"), ("route_feedback", "cell_lat", "REAL"),
                                     ("route_feedback", "cell_lon", "REAL")):
-            columns = {r["name"] for r in self._db.execute(f"PRAGMA table_info({table})")}
-            if column not in columns:
+            if column not in self._db.columns(table):
                 self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         self._db.commit()
 
     # ---- helpers -------------------------------------------------------
 
-    def _row_to_report(self, row: sqlite3.Row) -> Dict:
+    def _row_to_report(self, row) -> Dict:
         counts = self._db.execute(
-            "SELECT SUM(still_there = 1) AS still, SUM(still_there = 0) AS cleared, MAX(time) AS last"
+            f"SELECT SUM({STILL}) AS still, SUM({CLEARED}) AS cleared, MAX(time) AS last"
             " FROM confirmations WHERE report_num = ?",
             (row["num"],),
         ).fetchone()
@@ -212,18 +213,19 @@ class ReportStore:
         with self._lock:
             cur = self._db.execute(
                 "INSERT INTO reports (segment_id, category, description, status, latitude, longitude, created_at,"
-                " temporary_or_permanent, expires_at, photo_path, source, device) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                " temporary_or_permanent, expires_at, photo_path, source, device) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+                " RETURNING num",
                 (segment_id, category, description, status, latitude, longitude, now_iso(created), duration,
                  expires, photo_path, source, device),
             )
-            num = cur.lastrowid
+            num = cur.fetchone()["num"]
             if source == "operator":
                 self._event(num, "operator_closure", "operator")
             else:
                 self._event(num, "reported", "community")
                 if device:  # the reporter counts as the first "still there"
-                    self._db.execute("INSERT OR IGNORE INTO confirmations VALUES (?,?,1,?)",
-                                     (num, device, now_iso(created)))
+                    self._db.execute("INSERT INTO confirmations VALUES (?,?,1,?)"
+                                     " ON CONFLICT (report_num, device) DO NOTHING", (num, device, now_iso(created)))
             self._db.commit()
             return self.get(_report_id(num))
 
@@ -255,12 +257,11 @@ class ReportStore:
             if not self._exists(num):
                 return None
             self._db.execute("UPDATE reports SET status = ? WHERE num = ?", (status, num))
-            # Re-verifying a temporary hazard restarts its expiry clock.
-            self._db.execute(
-                "UPDATE reports SET expires_at = ? WHERE num = ? AND temporary_or_permanent = 'temporary'"
-                " AND ? = 'verified_active'",
-                (_expiry(), num, status),
-            )
+            if status == "verified_active":  # re-verifying a temporary hazard restarts its expiry clock
+                self._db.execute(
+                    "UPDATE reports SET expires_at = ? WHERE num = ? AND temporary_or_permanent = 'temporary'",
+                    (_expiry(), num),
+                )
             self._event(num, status, role, evidence)
             self._db.commit()
             return self.get(id)
@@ -337,8 +338,7 @@ class ReportStore:
             rows = self._db.execute(
                 "SELECT r.segment_id FROM reports r JOIN confirmations c ON c.report_num = r.num"
                 " WHERE r.status = 'pending' AND r.temporary_or_permanent = 'temporary'"
-                " GROUP BY r.num HAVING SUM(c.still_there = 1) >= ?"
-                " AND SUM(c.still_there = 1) > SUM(c.still_there = 0)",
+                f" GROUP BY r.num, r.segment_id HAVING SUM({STILL}) >= ? AND SUM({STILL}) > SUM({CLEARED})",
                 (COMMUNITY_CONFIRMATIONS,),
             ).fetchall()
             return {r["segment_id"] for r in rows}
@@ -475,16 +475,18 @@ class ReportStore:
         with self._lock:
             cur = self._db.execute(
                 "INSERT INTO reports (segment_id, category, description, status, latitude, longitude, created_at,"
-                " temporary_or_permanent, expires_at, photo_path, source, device) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                " temporary_or_permanent, expires_at, photo_path, source, device) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+                " RETURNING num",
                 (report["segment_id"], report["category"], report.get("description"), status, report["latitude"],
                  report["longitude"], report["created_at"], duration, expires, report.get("photo_path"), "sample",
                  None),
             )
-            num = cur.lastrowid
+            num = cur.fetchone()["num"]
             for event in report.get("events", []):
                 self._event(num, event["type"], event["role"], event.get("evidence"), event["time"])
             for i, vote in enumerate(report.get("votes", [])):
-                self._db.execute("INSERT OR REPLACE INTO confirmations VALUES (?,?,?,?)",
+                self._db.execute("INSERT INTO confirmations VALUES (?,?,?,?) ON CONFLICT (report_num, device)"
+                                 " DO UPDATE SET still_there = excluded.still_there, time = excluded.time",
                                  (num, f"sample-device-{num}-{i}", 1 if vote["still_there"] else 0, vote["time"]))
             self._db.commit()
             return self.get(_report_id(num))
@@ -510,10 +512,13 @@ class ReportStore:
 
         with self._lock:
             stored = [r["photo_path"] for r in self._db.execute("SELECT photo_path FROM reports WHERE photo_path IS NOT NULL")]
-            self._db.executescript(
-                "DELETE FROM confirmations; DELETE FROM verification_events; DELETE FROM reports;"
-                " DELETE FROM sqlite_sequence WHERE name IN ('reports', 'verification_events');"
-            )
+            self._db.executescript("DELETE FROM confirmations; DELETE FROM verification_events; DELETE FROM reports")
+            # Numbering starts again at report_1.
+            if self._db.dialect == "postgres":
+                self._db.executescript("ALTER SEQUENCE reports_num_seq RESTART WITH 1;"
+                                       " ALTER SEQUENCE verification_events_id_seq RESTART WITH 1")
+            else:
+                self._db.execute("DELETE FROM sqlite_sequence WHERE name IN ('reports', 'verification_events')")
             self._db.commit()
         for name in stored:
             photos.delete(name)
