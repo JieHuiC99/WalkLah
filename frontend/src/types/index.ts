@@ -198,6 +198,16 @@ export interface Pilot {
   audited_coverage: Coverage
   sources: string[]
   built_at: string | null
+  /** Cities the deployed service routes and searches in; empty or missing means all of Malaysia. */
+  covered_areas?: CoveredArea[]
+}
+
+export interface CoveredArea {
+  name: string
+  west: number
+  south: number
+  east: number
+  north: number
 }
 
 export type ReportStatus = 'pending' | 'verified_active' | 'verified_cleared' | 'disputed' | 'stale'

@@ -45,7 +45,8 @@ async function loadBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {
   }
 }
 
-/** Absolute URL for a report photo path from the API (e.g. /reports/report_3/photo). */
+/** Absolute URL for a report photo: an API path (e.g. /reports/report_3/photo) or a full storage link. */
 export function photoSrc(path: string | null | undefined): string | null {
-  return path ? `${API_BASE}${path}` : null
+  if (!path) return null
+  return /^https?:\/\//.test(path) ? path : `${API_BASE}${path}`
 }

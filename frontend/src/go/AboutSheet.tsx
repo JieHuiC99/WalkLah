@@ -24,7 +24,9 @@ export function AboutSheet({
   onPrefs: (p: GoPrefs) => void
   onClose: () => void
 }) {
-  const national = pilot?.coverage_area === 'malaysia' ? pilot.coverage : null
+  const cities = pilot?.covered_areas?.map((area) => area.name) ?? []
+  // Nationwide figures only when the whole country is routable (not on the city-only service).
+  const national = pilot?.coverage_area === 'malaysia' && !cities.length ? pilot.coverage : null
   const audited = pilot?.audited_coverage
   return (
     <Sheet title={t('How WalkLah works')} onClose={onClose} tall>
@@ -46,6 +48,7 @@ export function AboutSheet({
       {pilot && (
         <section className="about-section">
           <h3>{t('What the map knows today')}</h3>
+          {cities.length > 0 && <p>{t('Walking routes and search cover {cities}.', { cities: cities.join(', ') })}</p>}
           {national && (
             <div className="coverage-grid">
               <div>

@@ -340,6 +340,7 @@ registerMs({
   'This is our S.T.E.P. framework: Survey, Track, Explore, Prioritise.':
     'Ini rangka kerja S.T.E.P. kami: Tinjau (Survey), Jejak (Track), Teroka (Explore), Utamakan (Prioritise).',
   'What the map knows today': 'Apa yang peta tahu hari ini',
+  'Walking routes and search cover {cities}.': 'Laluan pejalan kaki dan carian meliputi {cities}.',
   'of walkable paths in Malaysia': 'laluan pejalan kaki di Malaysia',
   'places to search': 'tempat boleh dicari',
   'sidewalk status known': 'status laluan pejalan kaki diketahui',

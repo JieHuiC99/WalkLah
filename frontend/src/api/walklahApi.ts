@@ -27,9 +27,10 @@ import type {
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
-const DEFAULT_TIMEOUT_MS = 10_000
+// Generous: the first request after a quiet spell also starts the server and loads map tiles.
+const DEFAULT_TIMEOUT_MS = 20_000
 // The backend loads its graph and shade model lazily, so the first route request can take several seconds.
-const ROUTE_TIMEOUT_MS = 30_000
+const ROUTE_TIMEOUT_MS = 45_000
 
 /** status 0 = the request never got a response (network down or timeout). */
 export class ApiError extends Error {
@@ -88,7 +89,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (controller.signal.aborted) {
       throw new ApiError(0, `The WalkLah server took longer than ${timeoutMs / 1000} s to answer.`, 'timeout')
     }
-    throw new ApiError(0, `Can't reach the WalkLah server at ${API_BASE}. Is the backend running?`, 'network')
+    throw new ApiError(
+      0,
+      import.meta.env.DEV
+        ? `Can't reach the WalkLah server at ${API_BASE}. Is the backend running?`
+        : "Can't reach WalkLah right now. Check your connection and try again.",
+      'network',
+    )
   } finally {
     window.clearTimeout(timer)
   }

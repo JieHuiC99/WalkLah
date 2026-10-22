@@ -89,6 +89,10 @@ The dev server is pinned to port 5173 because the backend's CORS only allows tha
 Scripts: `npm run build` (type-check + build), `npm run lint` (oxlint), `npm run preview` (production build,
 with the service worker).
 
+Deployed site: a static Vite build (Vercel project with root directory `frontend/`). Set `VITE_API_BASE_URL`
+to the deployed API's URL at build time; it is public, so never put a key or secret in a `VITE_*` variable.
+The deployed API routes and searches in the cities listed on the About sheet (see `backend/HANDOFF.md`).
+
 Shareable links keep the trip and language, e.g.
 `/?lang=ms&tab=explore&from=3.114548,101.661702&fn=KJ19%20Universiti&to=3.121464,101.656556&tn=Dewan%20Tunku%20Canselor&t=13`.
 
