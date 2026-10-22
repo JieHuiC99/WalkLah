@@ -48,7 +48,7 @@ def create_reports_router(graph_service) -> APIRouter:
                     u, v = parse_segment_id(segment)
                 except ValueError:
                     raise HTTPException(status_code=400, detail="Invalid segment_id. Expected 'nodeA-nodeB'.")
-                if REGIONS.db.edge_by_nodes(u, v) is None:
+                if REGIONS.edge_info(segment_id(u, v)) is None:
                     raise HTTPException(status_code=400, detail="segment_id is not in the walking network.")
                 return segment_id(u, v)
             near = REGIONS.near_segments(latitude, longitude, radius_m=MAX_SNAP_DISTANCE_M, limit=1)

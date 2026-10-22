@@ -97,12 +97,8 @@ def segment_name(sid: str) -> Optional[str]:
     if seg is not None:
         return seg.name
     if REGIONS.available:
-        try:
-            a, b = parse_segment_id(sid)
-        except ValueError:
-            return None
-        row = REGIONS.db.edge_by_nodes(a, b)
-        return row["name"] if row else None
+        info = REGIONS.edge_info(sid)
+        return info["name"] if info else None
     return None
 
 
@@ -294,11 +290,7 @@ def create_insights_router(graph_service) -> APIRouter:
         if sid in CONDITIONS.segments:
             return True
         if REGIONS.available:
-            try:
-                a, b = parse_segment_id(sid)
-            except ValueError:
-                return False
-            return REGIONS.db.edge_by_nodes(a, b) is not None
+            return REGIONS.edge_info(sid) is not None
         return False
 
     @router.post("/audit", dependencies=[Depends(require_operator)])
