@@ -215,7 +215,10 @@ export interface Report extends LatLon {
   temporary_or_permanent: 'temporary' | 'permanent'
   expires_at: string | null
   has_photo: boolean
-  source: 'community' | 'operator'
+  /** API path of the photo (prefix with API_BASE), or null. */
+  photo_url: string | null
+  /** 'sample': labelled example report loaded from Insights; always shown with a Sample tag. */
+  source: 'community' | 'operator' | 'sample'
   confirmations: { still_there: number; cleared: number; last_at: string | null }
   /** Temporary hazard confirmed by 3+ walkers: routes avoid it until an operator decides. */
   community_confirmed: boolean
@@ -236,6 +239,8 @@ export interface CreateReportBody extends LatLon {
   description: string | null
   segment_id?: string
   device?: string
+  /** JPEG data URL prepared on the phone (utils/photo.ts). */
+  photo?: string
 }
 
 export interface NearSegment {

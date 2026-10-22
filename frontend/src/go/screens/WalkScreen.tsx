@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import * as api from '../../api/walklahApi'
 import { Icon, type IconName } from '../../components/icons'
 import type { UserLocation } from '../../components/MapView'
 import { isInsideDataBounds } from '../../config/map'
-import type { LatLon, PlannedRoute, RouteAlert, RouteStep } from '../../types'
+import type { LatLon, PlannedRoute, Report, RouteAlert, RouteStep } from '../../types'
+import { preparePhoto } from '../../utils/photo'
 import { language, t } from '../i18n'
 import { deviceId, distanceLabel } from '../lib'
 import { alertText, stepText } from '../describe'
@@ -79,6 +80,10 @@ export function WalkScreen({ route, destination, preview, onPreviewChange, onPos
   const [voice, setVoice] = useState(false)
   const [showSteps, setShowSteps] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  // The report just sent from walk mode, so a photo can be added to it with one more tap.
+  const [lastReport, setLastReport] = useState<Report | null>(null)
+  const toastTimer = useRef<number | null>(null)
+  const photoInput = useRef<HTMLInputElement>(null)
   const [feedback, setFeedback] = useState<'idle' | 'sent'>('idle')
   const offSince = useRef<number | null>(null)
   const alongRef = useRef(0)
@@ -194,11 +199,37 @@ export function WalkScreen({ route, destination, preview, onPreviewChange, onPos
         device: deviceId(),
       })
       setToast(report.merged ? t('Added your confirmation to an existing report. Thanks!') : t('Reported here. Thanks!'))
+      setLastReport(report.has_photo ? null : report)
       onReported()
     } catch (error) {
       setToast(api.errorMessage(error))
+      setLastReport(null)
     }
-    window.setTimeout(() => setToast(null), 4000)
+    hideToastLater(12_000)
+  }
+
+  const hideToastLater = (ms: number) => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => {
+      setToast(null)
+      setLastReport(null)
+    }, ms)
+  }
+
+  const addPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !lastReport) return
+    try {
+      setToast(t('Sending photo…'))
+      await api.addReportPhoto(lastReport.id, await preparePhoto(file), deviceId())
+      setToast(t('Photo added. Thanks!'))
+      setLastReport(null)
+      onReported()
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : t("That photo couldn't be read. Try JPEG or PNG."))
+    }
+    hideToastLater(4000)
   }
 
   const sendFeedback = async (passable: 'yes' | 'partly' | 'no') => {
@@ -320,8 +351,14 @@ export function WalkScreen({ route, destination, preview, onPreviewChange, onPos
         {toast && (
           <p className="walk-toast" role="status">
             {toast}
+            {lastReport && (
+              <button type="button" className="link-btn walk-toast__photo" onClick={() => photoInput.current?.click()}>
+                <Icon name="camera" size={14} /> {t('Add photo')}
+              </button>
+            )}
           </p>
         )}
+        <input ref={photoInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void addPhoto(e)} />
 
         <button type="button" className="walk-steps-toggle" onClick={() => setShowSteps(!showSteps)} aria-expanded={showSteps}>
           {showSteps ? t('Hide steps') : t('All steps ({n})', { n: steps.length })}

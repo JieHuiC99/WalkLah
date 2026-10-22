@@ -396,4 +396,28 @@ registerMs({
     'Tidak diketahui bermaksud belum disemak — bukan bermakna ia baik.',
   'Minor road': 'Jalan kecil',
   Highway: 'Lebuh raya',
+
+  // ---- photos
+  Photo: 'Foto',
+  'optional, helps the operator verify': 'pilihan, membantu pihak pengurusan mengesahkan',
+  'Your photo': 'Foto anda',
+  Remove: 'Buang',
+  'Preparing…': 'Menyediakan…',
+  'Take photo': 'Ambil foto',
+  'Choose photo': 'Pilih foto',
+  'Please avoid faces and number plates. Location data is removed from the photo.':
+    'Sila elakkan wajah dan nombor plat. Data lokasi dibuang daripada foto.',
+  'Reports are anonymous; no name or account is stored.': 'Laporan adalah tanpa nama; tiada nama atau akaun disimpan.',
+  'Please choose a photo.': 'Sila pilih foto.',
+  "That photo couldn't be read. Try JPEG or PNG.": 'Foto itu tidak dapat dibaca. Cuba JPEG atau PNG.',
+  "This browser can't prepare photos.": 'Pelayar ini tidak dapat menyediakan foto.',
+  'Add photo': 'Tambah foto',
+  'Sending photo…': 'Menghantar foto…',
+  'Photo added. Thanks!': 'Foto ditambah. Terima kasih!',
+  'View photo': 'Lihat foto',
+  'Report photo': 'Foto laporan',
+  Close: 'Tutup',
+  'Sample photo (openly licensed); see credits in Insights.': 'Foto contoh (berlesen terbuka); lihat kredit dalam Insights.',
+  Sample: 'Contoh',
+  'Example report loaded by an operator': 'Laporan contoh dimuatkan oleh pihak pengurusan',
 })

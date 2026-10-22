@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import * as api from '../../api/walklahApi'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { Icon } from '../../components/icons'
+import { ReportPhoto, SampleTag } from '../../components/ReportPhoto'
 import { StatusBadge } from '../../components/StatusBadge'
 import { CATEGORIES, categoryLabel } from '../../config/categories'
 import { statusMeta } from '../../config/status'
@@ -34,6 +35,7 @@ const EVENT_LABELS: Record<string, string> = {
   verified_cleared: 'Marked cleared',
   disputed: 'Disputed',
   stale: 'Marked stale',
+  photo_added: 'Photo added by a walker',
 }
 
 /** Open work first: pending with most 'still there' votes, then active, then the rest by date. */
@@ -130,6 +132,7 @@ export function TrackStage({ operatorKey, overview, reports, trends, refresh, fl
               <li key={report.id} className="ops-row" style={{ borderLeftColor: statusMeta(report.status).color }}>
                 <div className="ops-row__head">
                   <StatusBadge status={report.status} />
+                  {report.source === 'sample' && <SampleTag />}
                   {report.community_confirmed && (
                     <span className="status-badge status-badge--amber status-badge--small">Confirmed by walkers · avoided</span>
                   )}
@@ -143,6 +146,7 @@ export function TrackStage({ operatorKey, overview, reports, trends, refresh, fl
                   <div className="ops-row__text">
                     <strong>{categoryLabel(report.category)}</strong>
                     {report.description && <p>{report.description}</p>}
+                    <ReportPhoto report={report} size="large" />
                     <span className="ops-row__meta">
                       {report.confirmations.still_there} still there · {report.confirmations.cleared} cleared ·{' '}
                       <code>seg {report.segment_id}</code>
@@ -210,6 +214,8 @@ export function TrackStage({ operatorKey, overview, reports, trends, refresh, fl
           await refresh()
         }}
       />
+
+      <SampleSet operatorKey={operatorKey} reports={reports} onChanged={refresh} />
 
       <section className="reset-zone">
         {confirmReset ? (
@@ -304,5 +310,69 @@ function ClosureForm({
         {saving ? 'Saving…' : 'Add closure'}
       </button>
     </form>
+  )
+}
+
+/** Labelled example reports with credited photos, to show how verification works. */
+function SampleSet({
+  operatorKey,
+  reports,
+  onChanged,
+}: {
+  operatorKey: string
+  reports: Report[]
+  onChanged: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const count = reports.filter((r) => r.source === 'sample').length
+
+  const run = async (action: 'load' | 'remove') => {
+    setBusy(true)
+    setMessage(null)
+    try {
+      if (action === 'load') {
+        const result = await api.loadSampleData(operatorKey)
+        setMessage(
+          `Loaded ${result.loaded} sample reports` +
+            (result.skipped.length ? ` (${result.skipped.length} outside the mapped area were skipped).` : '.'),
+        )
+      } else {
+        const result = await api.removeSampleData(operatorKey)
+        setMessage(`Removed ${result.removed} sample reports. Real reports were not touched.`)
+      }
+      await onChanged()
+    } catch (e) {
+      setMessage(api.errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="card card--quiet sample-set">
+      <h2>
+        Sample reports <SampleTag />
+      </h2>
+      <p className="muted small">
+        Example reports with photos (openly licensed,{' '}
+        <a href={api.SAMPLE_CREDITS_URL} target="_blank" rel="noreferrer">
+          credits
+        </a>
+        ) to show how verification works: pending, confirmed by walkers, verified, cleared and an official closure. Each one is
+        tagged Sample everywhere, adds no trip statistics, and can be removed at any time.
+      </p>
+      <div className="button-row button-row--start">
+        <button type="button" className="btn btn--small" disabled={busy} onClick={() => void run('load')}>
+          <Icon name="image" size={16} /> {count ? 'Reload sample reports' : 'Load sample reports'}
+        </button>
+        {count > 0 && (
+          <button type="button" className="btn btn--small btn--ghost" disabled={busy} onClick={() => void run('remove')}>
+            <Icon name="x" size={16} /> Remove sample reports ({count} here)
+          </button>
+        )}
+      </div>
+      {message && <p className="muted small">{message}</p>}
+    </section>
   )
 }

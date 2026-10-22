@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as api from '../../api/walklahApi'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { Icon } from '../../components/icons'
+import { ReportPhoto, SampleTag } from '../../components/ReportPhoto'
 import { StatusBadge } from '../../components/StatusBadge'
 import { categoryLabel } from '../../config/categories'
 import type { BarrierCandidate, Issue, ScenarioResult } from '../../types'
@@ -57,6 +58,8 @@ export function PrioritiseStage({ operatorKey, reports, bbox, flyTo, startPick, 
                     {issue.still_there_votes} still-there votes
                   </span>
                 </div>
+                <ReportPhoto report={issue.report} />
+                {issue.report.source === 'sample' && <SampleTag />}
                 <StatusBadge status={issue.report.status} size="small" />
                 <span className="issue-list__score" title="Priority score">
                   {issue.priority}

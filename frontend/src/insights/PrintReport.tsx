@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { categoryLabel } from '../config/categories'
 import { statusMeta } from '../config/status'
 import type { Overview, ScenarioResult, Trends } from '../types'
+import { photoSrc } from '../utils/photo'
 import { formatMetres } from '../utils/format'
 
 /** Township summary shown only when printing (Print report → Save as PDF). */
@@ -106,6 +107,10 @@ export function PrintReport({
                 <td>
                   {categoryLabel(issue.report.category)}
                   {issue.path_name ? ` · ${issue.path_name}` : ''}
+                  {issue.report.source === 'sample' ? ' (sample)' : ''}
+                  {issue.report.photo_url && (
+                    <img className="print-report__photo" src={photoSrc(issue.report.photo_url)!} alt="" />
+                  )}
                 </td>
                 <td>{statusMeta(issue.report.status).label}</td>
                 <td>{issue.trips_affected}</td>

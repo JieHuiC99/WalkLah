@@ -163,7 +163,10 @@ export async function getReports(): Promise<Report[]> {
 }
 
 export const createReport = (body: CreateReportBody) =>
-  request<Report>('/reports', { method: 'POST', body: json(body) })
+  request<Report>('/reports', { method: 'POST', body: json(body), timeoutMs: body.photo ? 30_000 : undefined })
+
+export const addReportPhoto = (id: string, photo: string, device: string) =>
+  request<Report>(`/reports/${encodeURIComponent(id)}/photo`, { method: 'POST', body: json({ photo, device }), timeoutMs: 30_000 })
 
 export const confirmReport = (id: string, stillThere: boolean, device: string) =>
   request<Report>(`/reports/${encodeURIComponent(id)}/confirm`, {
@@ -268,6 +271,14 @@ export const auditTemplate = () => request<string>('/audit/template', { text: tr
 export async function getFeedback(key: string, bbox?: string | null): Promise<FeedbackRow[]> {
   return (await request<{ feedback: FeedbackRow[] }>(`/insights/feedback?${area(bbox)}`, { operatorKey: key })).feedback
 }
+
+export const loadSampleData = (key: string) =>
+  request<{ loaded: number; skipped: string[] }>('/admin/sample-data', { method: 'POST', operatorKey: key, timeoutMs: 30_000 })
+
+export const removeSampleData = (key: string) =>
+  request<{ removed: number }>('/admin/sample-data', { method: 'DELETE', operatorKey: key })
+
+export const SAMPLE_CREDITS_URL = `${API_BASE}/sample-data/credits`
 
 export const clearAllReports = (key: string) =>
   request<{ status: string }>('/admin/reset', { method: 'POST', operatorKey: key })

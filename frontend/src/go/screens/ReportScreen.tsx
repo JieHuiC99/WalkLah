@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import * as api from '../../api/walklahApi'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { Icon } from '../../components/icons'
@@ -7,6 +7,7 @@ import { CATEGORIES, durationLabel } from '../../config/categories'
 import { isInsideDataBounds } from '../../config/map'
 import type { LatLon, NearSegment, Report } from '../../types'
 import { t } from '../i18n'
+import { preparePhoto } from '../../utils/photo'
 import { deviceId } from '../lib'
 
 const MAX_DESCRIPTION = 280
@@ -34,6 +35,10 @@ interface Props {
 export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props) {
   const [category, setCategory] = useState<string | null>(null)
   const [description, setDescription] = useState('')
+  const [photo, setPhoto] = useState<string | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
   const [candidates, setCandidates] = useState<NearSegment[]>([])
   const [segment, setSegment] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -74,6 +79,21 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
     )
   }
 
+  const onPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setPhotoBusy(true)
+    setError(null)
+    try {
+      setPhoto(await preparePhoto(file))
+    } catch (err) {
+      setError(err instanceof Error ? t(err.message) : t("That photo couldn't be read. Try JPEG or PNG."))
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
@@ -85,6 +105,7 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
       const report = await api.createReport({
         category,
         description: description.trim() || null,
+        ...(photo ? { photo } : {}),
         latitude: point.latitude,
         longitude: point.longitude,
         device: deviceId(),
@@ -94,6 +115,7 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
       setSubmitted(report)
       setCategory(null)
       setDescription('')
+      setPhoto(null)
       setCandidates([])
     } catch (err) {
       // Keep everything the walker entered so they can retry.
@@ -219,6 +241,32 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
         </div>
       </fieldset>
 
+      <div className="go-field">
+        <span className="go-label">
+          {t('Photo')} <span className="muted">({t('optional, helps the operator verify')})</span>
+        </span>
+        {photo ? (
+          <div className="photo-preview">
+            <img src={photo} alt={t('Your photo')} />
+            <button type="button" className="btn btn--small" onClick={() => setPhoto(null)}>
+              <Icon name="x" size={16} /> {t('Remove')}
+            </button>
+          </div>
+        ) : (
+          <div className="photo-actions">
+            <button type="button" className="btn btn--small" onClick={() => cameraRef.current?.click()} disabled={photoBusy}>
+              <Icon name="camera" size={16} /> {photoBusy ? t('Preparing…') : t('Take photo')}
+            </button>
+            <button type="button" className="btn btn--small btn--ghost" onClick={() => galleryRef.current?.click()} disabled={photoBusy}>
+              <Icon name="image" size={16} /> {t('Choose photo')}
+            </button>
+          </div>
+        )}
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void onPhoto(e)} />
+        <input ref={galleryRef} type="file" accept="image/*" hidden onChange={(e) => void onPhoto(e)} />
+        <span className="fine-print">{t('Please avoid faces and number plates. Location data is removed from the photo.')}</span>
+      </div>
+
       <label className="go-field">
         <span className="go-label">
           {t('Description')} <span className="muted">({t('optional')})</span>
@@ -252,7 +300,7 @@ export function ReportScreen({ point, onPoint, onSubmitted, onCommunity }: Props
           </>
         )}
       </button>
-      <p className="fine-print center">{t('Reports are anonymous. Please describe what you saw; photos are not collected.')}</p>
+      <p className="fine-print center">{t('Reports are anonymous; no name or account is stored.')}</p>
     </form>
   )
 }

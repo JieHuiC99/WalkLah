@@ -30,8 +30,10 @@ Every route line and number comes from the backend API. Unknown conditions are s
   (optional voice). Leaving the route for 10 s plans a new one from where you are. One tap reports
   *Blocked / Flooded / Dark here* at your position; on arrival it asks whether the route was passable.
   *Preview* plays the walk along the route on a laptop without GPS.
-- **Report:** drop a pin; if a road and its sidewalk are both close you choose which. A report of the same
-  kind within 30 m becomes a confirmation instead of a duplicate.
+- **Report:** drop a pin; if a road and its sidewalk are both close you choose which. **Take a photo** (or
+  choose one) as evidence: it is resized on the phone and re-encoded, which removes its location data. A report
+  of the same kind within 30 m becomes a confirmation instead of a duplicate. In walk mode, a one-tap report
+  offers *Add photo* afterwards.
 - **Community:** reports within 10 km (or all of Malaysia) with **Still there / Cleared** votes. When three
   phones confirm a temporary hazard, Practical and Enjoyable avoid it until an operator checks it.
 - **Installable:** add to the home screen from Chrome/Edge/Safari; the app shell opens offline (routes and
@@ -44,8 +46,9 @@ Works on **the map area** (pan to your township) or all of Malaysia. *Export CSV
 met a barrier.
 
 - **S · Survey:** Malaysia-wide OSM coverage next to the team-audited area, the audit CSV template and upload.
-- **T · Track:** a verification queue (walker-confirmed hazards are flagged), evidence notes and history,
-  official closures placed on the map, weekly trends, and *Clear all reports*.
+- **T · Track:** a verification queue with photos (walker-confirmed hazards are flagged), evidence notes and
+  history, official closures placed on the map, weekly trends, **Sample reports** (load or remove labelled
+  example reports with openly licensed photos; tagged *Sample* everywhere) and *Clear all reports*.
 - **E · Explore:** opt-in route statistics (detours caused by barriers, shade difference), after-walk feedback.
 - **P · Prioritise:** ranked issues (formula shown) and **planning scenarios**: fix a verified barrier or draw
   a new walkway and see before/after distances between the stations, bus stops and everyday destinations

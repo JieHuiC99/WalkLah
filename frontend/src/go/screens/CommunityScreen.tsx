@@ -2,6 +2,7 @@ import { useState } from 'react'
 import * as api from '../../api/walklahApi'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { Icon } from '../../components/icons'
+import { ReportPhoto, SampleTag } from '../../components/ReportPhoto'
 import { StatusBadge } from '../../components/StatusBadge'
 import { categoryLabel } from '../../config/categories'
 import { statusMeta } from '../../config/status'
@@ -130,8 +131,10 @@ export function CommunityScreen({ reports, near, onChanged, onShowOnMap, onRepor
                     </span>
                   </div>
                   {report.description && <p className="report-item__description">{report.description}</p>}
+                  <ReportPhoto report={report} />
                   <div className="report-item__meta">
                     <StatusBadge status={report.status} size="small" />
+                    {report.source === 'sample' && <SampleTag />}
                     {report.community_confirmed && (
                       <span className="status-badge status-badge--amber status-badge--small">{t('Confirmed by walkers')}</span>
                     )}
