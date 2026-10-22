@@ -40,6 +40,14 @@ class ReportCreate(BaseModel):
     longitude: float
     temporary_or_permanent: Optional[Literal["temporary", "permanent"]] = None
     device: Optional[str] = Field(default=None, min_length=8, max_length=64)
+    # Optional photo as a data URL (JPEG/PNG/WebP, at most 1.5 MB once decoded).
+    photo: Optional[str] = Field(default=None, max_length=2_100_000)
+
+
+class PhotoBody(BaseModel):
+    """A photo added to a report after it was sent (e.g. from walk mode)."""
+    photo: str = Field(max_length=2_100_000)
+    device: Optional[str] = Field(default=None, min_length=8, max_length=64)
 
 
 class VerifyRequest(BaseModel):

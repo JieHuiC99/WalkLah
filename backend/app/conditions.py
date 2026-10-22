@@ -11,12 +11,14 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
-from pyproj import Transformer
-from shapely import STRtree
-from shapely.geometry import LineString, Point
+from scipy.spatial import cKDTree
+
+from .geo import Projector, point_polyline_distance
 
 COMFORT_DIR = Path(__file__).resolve().parent.parent / "comfort"
-TO_UTM = Transformer.from_crs("EPSG:4326", "EPSG:32647", always_xy=True)
+TO_UTM = Projector(47)  # EPSG:32647, the CRS of comfort/*.json
+# Samples are at most this far apart along a segment (scripts/build_comfort.py, app/region.py).
+MAX_SAMPLE_GAP_M = 8.0
 
 COVERED, CANOPY, GREEN = 1, 2, 4
 
@@ -49,8 +51,7 @@ class Conditions:
         self.available = False
         self._lock = threading.Lock()
         self._loaded = False
-        self._line_tree: Optional[STRtree] = None
-        self._line_ids: List[str] = []
+        self._sample_tree: Optional[cKDTree] = None
         # Flat arrays of every sample point, for vectorised shadow tests.
         self.sample_x = np.empty(0)
         self.sample_y = np.empty(0)
@@ -84,13 +85,6 @@ class Conditions:
             self.sample_x = np.concatenate(xs) if xs else np.empty(0)
             self.sample_y = np.concatenate(ys) if ys else np.empty(0)
             self.sample_seg = np.concatenate(owner) if owner else np.empty(0, dtype=np.int32)
-            lines = []
-            for sid in self.seg_order:
-                seg = self.segments[sid]
-                if len(seg.xs) >= 2:
-                    lines.append(LineString(np.column_stack([seg.xs, seg.ys])))
-                    self._line_ids.append(sid)
-            self._line_tree = STRtree(lines) if lines else None
             self.available = True
             return self
 
@@ -134,14 +128,21 @@ class Conditions:
     def near(self, lat: float, lon: float, radius_m: float = 25.0, limit: int = 3) -> List[Dict]:
         """Candidate path segments around a point, nearest first (for report confirmation)."""
         self.load()
-        if self._line_tree is None:
+        if not len(self.sample_x):
             return []
+        if self._sample_tree is None:
+            self._sample_tree = cKDTree(np.column_stack([self.sample_x, self.sample_y]))
         x, y = TO_UTM.transform(lon, lat)
-        point = Point(x, y)
-        found = self._line_tree.query(point, predicate="dwithin", distance=radius_m)
-        geoms = self._line_tree.geometries
-        ranked = sorted(((float(geoms[i].distance(point)), self._line_ids[i]) for i in found))[:limit]
-        return [{"segment_id": sid, "distance_m": round(d, 1)} for d, sid in ranked]
+        # Any segment within radius has a sample within radius + half the sample spacing.
+        hits = self._sample_tree.query_ball_point([x, y], radius_m + MAX_SAMPLE_GAP_M)
+        ranked = []
+        for index in {int(self.sample_seg[h]) for h in hits}:
+            seg = self.segments[self.seg_order[index]]
+            d = point_polyline_distance(x, y, np.column_stack([seg.xs, seg.ys]))
+            if d <= radius_m:
+                ranked.append((d, seg.id))
+        ranked.sort()
+        return [{"segment_id": sid, "distance_m": round(d, 1)} for d, sid in ranked[:limit]]
 
 
 CONDITIONS = Conditions()

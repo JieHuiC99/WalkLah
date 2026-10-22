@@ -1,3 +1,10 @@
-# Only needed to build the Malaysia database (scripts/build_malaysia.py), not to run the API.
+# Data tooling only: building the UM layer (scripts/build_comfort.py) and the Malaysia database
+# (scripts/build_malaysia.py), plus downloading a fresh pilot graph. Not needed to run the API.
+osmnx==2.1.1
+geopandas==1.2.0
+shapely==2.2.0
+pyproj==3.8.0
+pandas==3.0.6
+scikit-learn==1.9.1
 osmium==4.3.1
 duckdb==1.5.6

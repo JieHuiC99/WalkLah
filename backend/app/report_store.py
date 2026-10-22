@@ -163,6 +163,7 @@ class ReportStore:
             "temporary_or_permanent": row["temporary_or_permanent"],
             "expires_at": row["expires_at"],
             "has_photo": bool(row["photo_path"]),
+            "photo_url": f"/reports/{_report_id(row['num'])}/photo" if row["photo_path"] else None,
             "source": row["source"],
             "confirmations": {
                 "still_there": still,
@@ -450,14 +451,72 @@ class ReportStore:
         with self._lock:
             return [dict(r) for r in self._db.execute("SELECT * FROM segment_audit ORDER BY segment_id").fetchall()]
 
-    def clear(self) -> None:
-        """Remove all reports. Route statistics, feedback and audits are kept."""
+    def set_photo(self, id: str, photo_path: str) -> Optional[Dict]:
+        """Attach a photo to a report that has none yet (returns None if missing or already has one)."""
+        num = _report_num(id)
         with self._lock:
+            cur = self._db.execute(
+                "UPDATE reports SET photo_path = ? WHERE num = ? AND (photo_path IS NULL OR photo_path = '')",
+                (photo_path, num),
+            )
+            if cur.rowcount == 0:
+                return None
+            self._event(num, "photo_added", "community")
+            self._db.commit()
+            return self.get(id)
+
+    # ---- labelled sample reports (Insights > Track > Sample reports) ----
+
+    def add_sample(self, report: Dict) -> Dict:
+        """Insert one sample report with its own timeline, votes and history (source = 'sample')."""
+        duration = report.get("temporary_or_permanent") or duration_for(report["category"])
+        status = report["status"]
+        expires = _expiry() if duration == "temporary" and status in ("pending", "verified_active") else None
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO reports (segment_id, category, description, status, latitude, longitude, created_at,"
+                " temporary_or_permanent, expires_at, photo_path, source, device) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (report["segment_id"], report["category"], report.get("description"), status, report["latitude"],
+                 report["longitude"], report["created_at"], duration, expires, report.get("photo_path"), "sample",
+                 None),
+            )
+            num = cur.lastrowid
+            for event in report.get("events", []):
+                self._event(num, event["type"], event["role"], event.get("evidence"), event["time"])
+            for i, vote in enumerate(report.get("votes", [])):
+                self._db.execute("INSERT OR REPLACE INTO confirmations VALUES (?,?,?,?)",
+                                 (num, f"sample-device-{num}-{i}", 1 if vote["still_there"] else 0, vote["time"]))
+            self._db.commit()
+            return self.get(_report_id(num))
+
+    def remove_samples(self) -> int:
+        """Delete every sample report with its votes and history; real reports are untouched."""
+        with self._lock:
+            nums = [r["num"] for r in self._db.execute("SELECT num FROM reports WHERE source = 'sample'")]
+            for num in nums:
+                self._db.execute("DELETE FROM confirmations WHERE report_num = ?", (num,))
+                self._db.execute("DELETE FROM verification_events WHERE report_num = ?", (num,))
+                self._db.execute("DELETE FROM reports WHERE num = ?", (num,))
+            self._db.commit()
+            return len(nums)
+
+    def sample_count(self) -> int:
+        with self._lock:
+            return int(self._db.execute("SELECT COUNT(*) FROM reports WHERE source = 'sample'").fetchone()[0])
+
+    def clear(self) -> None:
+        """Remove all reports (and their uploaded photos). Route statistics, feedback and audits are kept."""
+        from . import photos
+
+        with self._lock:
+            stored = [r["photo_path"] for r in self._db.execute("SELECT photo_path FROM reports WHERE photo_path IS NOT NULL")]
             self._db.executescript(
                 "DELETE FROM confirmations; DELETE FROM verification_events; DELETE FROM reports;"
                 " DELETE FROM sqlite_sequence WHERE name IN ('reports', 'verification_events');"
             )
             self._db.commit()
+        for name in stored:
+            photos.delete(name)
 
     def clear_all(self) -> None:
         """Everything, including statistics and audits (tests)."""

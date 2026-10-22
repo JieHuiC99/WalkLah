@@ -11,10 +11,17 @@ $env:WALKLAH_MY_DATA = "C:\walklah-data"      # folder with walklah_my.sqlite (s
 - API: http://127.0.0.1:8000 — interactive docs at http://127.0.0.1:8000/docs
 - With the Malaysia database, routes and search work anywhere in Malaysia. Without it, the API serves the
   UM pilot graph (`tests/backend/data/walklah.graphml`) exactly as before, and `/pilot` says so.
-- Reports, confirmations, audits and opt-in route statistics live in `data/walklah.db` (SQLite, gitignored).
+- Reports, confirmations, audits and opt-in route statistics live in `data/walklah.db` (SQLite, gitignored);
+  report photos in `data/photos/` (or `WALKLAH_PHOTOS`), deleted when reports are cleared.
+- Insights › Track › Sample reports loads labelled example reports with credited photos
+  (`sample_data/`, `POST/DELETE /admin/sample-data`); they are tagged "Sample" and add no trip statistics.
 - Insights is open by default. Set `WALKLAH_OPERATOR_KEY` to require the `X-Operator-Key` header for any
   public deployment. Community writes are rate limited (`WALKLAH_RATE_LIMITS`, default 10 reports and
   60 votes per phone per hour).
+- No compiled GIS libraries are needed to run the API or tests: `app/geo.py` does UTM conversion, WKB
+  polygons, point-in-polygon and distances with numpy/scipy, and `app/shade.py` uses a 2 m building-height
+  grid. (Windows Smart App Control blocks the PROJ/GEOS DLLs in pyproj/shapely on some laptops.) The
+  GIS stack is only needed for data builds: `pip install -r requirements-data.txt`.
 - Tests: `.venv\Scripts\python.exe -m pytest -q` (in-memory database, synthetic Malaysia database; no download).
 
 Full API: `docs/API_CONTRACT.md` (v3).

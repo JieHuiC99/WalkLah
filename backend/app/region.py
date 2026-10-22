@@ -6,7 +6,7 @@ lighting, covers, green, tree canopy, crossings) and cached. A trip loads only t
 tiles in a corridor around the straight line between its ends, joins them into
 one walking graph, and gets its own shade model for the time of day.
 
-Metric work uses GDM2000 Peninsula RSO (EPSG:3375) or East Malaysia BRSO (EPSG:3376).
+Metric work uses UTM (zone of the region's centre), computed in app/geo.py with numpy only.
 """
 
 import logging
@@ -18,14 +18,13 @@ from typing import Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 import networkx as nx
 import numpy as np
-import shapely
-from pyproj import Transformer
 from scipy.spatial import cKDTree
-from shapely import STRtree
 
 from .canopy import CANOPY, CanopySource
 from .conditions import CANOPY as CANOPY_FLAG
 from .conditions import COVERED, GREEN, Conditions, Segment
+from .geo import (PointSet, Projector, point_polyline_distance, points_in_polygons_grid, project_rings, utm_zone,
+                  wkb_polygons)
 from .osm_rules import stress_of
 from .region_db import RegionDB, unpack_line
 from .routing import segment_id
@@ -45,17 +44,18 @@ TILE_CACHE = 400
 REGION_CACHE = 6
 BUILD_WORKERS = 4
 
-_TRANSFORMERS: Dict[str, Transformer] = {}
+_PROJECTORS: Dict[int, Projector] = {}
 
 
-def crs_for(lon: float) -> str:
-    return "EPSG:3375" if lon < 107.0 else "EPSG:3376"
+def crs_for(lon: float) -> int:
+    """UTM zone used for a region (47-50 across Malaysia)."""
+    return utm_zone(lon)
 
 
-def to_metric(crs: str) -> Transformer:
-    if crs not in _TRANSFORMERS:
-        _TRANSFORMERS[crs] = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
-    return _TRANSFORMERS[crs]
+def to_metric(zone: int) -> Projector:
+    if zone not in _PROJECTORS:
+        _PROJECTORS[zone] = Projector(zone)
+    return _PROJECTORS[zone]
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -73,12 +73,15 @@ class TripTooLong(ValueError):
     pass
 
 
-def _project_geoms(geoms: np.ndarray, transformer: Transformer) -> np.ndarray:
-    def fn(coords: np.ndarray) -> np.ndarray:
-        x, y = transformer.transform(coords[:, 0], coords[:, 1])
-        return np.column_stack([x, y])
-
-    return shapely.transform(geoms, fn)
+def _project_polygons(blobs, projector: Projector) -> List[List[np.ndarray]]:
+    """WKB polygons (lon/lat) -> [[outer ring, holes...], ...] in metres."""
+    polygons = [rings for blob in blobs for rings in wkb_polygons(blob)]
+    flat = project_rings(projector, [ring for rings in polygons for ring in rings])
+    out, i = [], 0
+    for rings in polygons:
+        out.append(flat[i:i + len(rings)])
+        i += len(rings)
+    return out
 
 
 def sample_lines(xy: np.ndarray, ll: np.ndarray, starts: np.ndarray, step: float):
@@ -105,7 +108,7 @@ def sample_lines(xy: np.ndarray, ll: np.ndarray, starts: np.ndarray, step: float
 class Tile:
     """Edges whose midpoint lies in this tile, with their condition layer."""
 
-    def __init__(self, key: Tuple[int, int], crs: str, db: RegionDB, canopy: CanopySource,
+    def __init__(self, key: Tuple[int, int], crs: int, db: RegionDB, canopy: CanopySource,
                  audit: Dict[str, Dict]):
         self.key = key
         self.crs = crs
@@ -142,34 +145,37 @@ class Tile:
         sxy, sll, counts = sample_lines(all_xy, all_ll, bounds, SAMPLE_STEP_M)
         sample_bounds = np.concatenate([[0], np.cumsum(counts)])
         flags = np.zeros(len(sxy), dtype=np.int64)
-        pts = shapely.points(sxy[:, 0], sxy[:, 1])
+        pts = PointSet(sxy[:, 0], sxy[:, 1])
+        sample_owner = np.repeat(np.arange(len(sids)), counts)
 
         pad = 0.0005
         box = (self.west - pad, self.south - pad, self.east + pad, self.north + pad)
         for table, flag in (("covers", COVERED), ("green", GREEN)):
             areas = db.areas_in(table, *box)
             if areas:
-                geoms = _project_geoms(shapely.from_wkb([a["geom"] for a in areas]), tr)
-                hit, _ = STRtree(geoms).query(pts, predicate="within")
-                flags[np.unique(hit)] |= flag
+                polygons = _project_polygons([a["geom"] for a in areas], tr)
+                flags[points_in_polygons_grid(sxy[:, 0], sxy[:, 1], polygons)] |= flag
         trees = db.points_in("tree", *box)
         if trees:
-            tx, ty = tr.transform([t["lon"] for t in trees], [t["lat"] for t in trees])
-            hit, _ = STRtree(shapely.points(tx, ty)).query(pts, predicate="dwithin", distance=TREE_RADIUS_M)
-            flags[np.unique(hit)] |= GREEN
+            tx, ty = tr.transform(np.array([t["lon"] for t in trees]), np.array([t["lat"] for t in trees]))
+            flags[pts.near_points(tx, ty, TREE_RADIUS_M)] |= GREEN
         under, self.canopy_source = canopy.sample(sll[:, 0], sll[:, 1])
         if under is not None:
             flags[under] |= CANOPY_FLAG
 
-        # Street lamps: one query for every line in the tile.
+        # Street lamps: samples near a lamp give candidate lines, then the exact distance decides.
         near_lamp = np.zeros(len(sids), dtype=bool)
         lamps = db.points_in("lamp", *box)
         if lamps:
-            lx, ly = tr.transform([p["lon"] for p in lamps], [p["lat"] for p in lamps])
-            vertex_owner = np.repeat(np.arange(len(sids)), np.diff(bounds))
-            lines = shapely.linestrings(all_xy, indices=vertex_owner)
-            hit, _ = STRtree(shapely.points(lx, ly)).query(lines, predicate="dwithin", distance=LAMP_RADIUS_M)
-            near_lamp[np.unique(hit)] = True
+            lx, ly = tr.transform(np.array([p["lon"] for p in lamps]), np.array([p["lat"] for p in lamps]))
+            lamp_tree = cKDTree(np.column_stack([lx, ly]))
+            reach = LAMP_RADIUS_M + SAMPLE_STEP_M / 2
+            for i in np.unique(sample_owner[pts.near_points(lx, ly, reach)]):
+                xy = all_xy[bounds[i]:bounds[i + 1]]
+                for j in lamp_tree.query_ball_point(xy.mean(axis=0), reach + float(np.ptp(xy, axis=0).max())):
+                    if point_polyline_distance(lx[j], ly[j], xy) <= LAMP_RADIUS_M:
+                        near_lamp[i] = True
+                        break
 
         for i, sid in enumerate(sids):
             row, coords = best[sid]
@@ -201,7 +207,7 @@ class Tile:
 class Region:
     """One walking graph + condition layer + shade model for a set of tiles (GraphService-compatible)."""
 
-    def __init__(self, tiles: List[Tile], crs: str, db: RegionDB):
+    def __init__(self, tiles: List[Tile], crs: int, db: RegionDB):
         self.crs = crs
         self.tiles = tiles
         segments: Dict[str, Segment] = {}
@@ -255,20 +261,17 @@ class Region:
         self.shade_model = ShadeModel(self.conditions, buildings=self._buildings(db, tr),
                                       latlon=((south + north) / 2, (west + east) / 2))
 
-    def _buildings(self, db: RegionDB, tr: Transformer):
+    def _buildings(self, db: RegionDB, tr: Projector):
         rows = db.areas_in("buildings", *self.bounds)
-        if not rows:
-            return [], np.empty(0), np.empty(0, bool)
-        geoms = _project_geoms(shapely.from_wkb([r["geom"] for r in rows]), tr)
-        parts, owner = shapely.get_parts(geoms, return_index=True)
-        rings = shapely.get_exterior_ring(parts)
-        coords, ring_idx = shapely.get_coordinates(rings, return_index=True)
-        splits = np.flatnonzero(np.diff(ring_idx)) + 1
-        ring_coords = np.split(coords, splits)
-        heights = np.array([rows[i]["height"] for i in owner])
-        estimated = np.array([bool(rows[i]["est"]) for i in owner])
-        keep = [i for i, rc in enumerate(ring_coords) if len(rc) >= 4]
-        return [ring_coords[i] for i in keep], heights[keep], estimated[keep]
+        outers, heights, estimated = [], [], []
+        for row in rows:
+            for polygon in wkb_polygons(row["geom"]):
+                if len(polygon[0]) < 4:
+                    continue
+                outers.append(polygon[0])
+                heights.append(row["height"])
+                estimated.append(bool(row["est"]))
+        return project_rings(tr, outers), np.array(heights, dtype=float), np.array(estimated, dtype=bool)
 
     # -- GraphService interface used by ComfortRouter -----------------------
     def _ensure(self) -> nx.MultiDiGraph:
@@ -306,10 +309,10 @@ class RegionService:
         return self.db.meta() if self.available else {}
 
     # -- tiles and regions ------------------------------------------------
-    def tile(self, key: Tuple[int, int], crs: str) -> Tile:
+    def tile(self, key: Tuple[int, int], crs: int) -> Tile:
         return self.tiles([key], crs)[0]
 
-    def tiles(self, keys: List[Tuple[int, int]], crs: str) -> List[Tile]:
+    def tiles(self, keys: List[Tuple[int, int]], crs: int) -> List[Tile]:
         """Cached tiles; missing ones are built in parallel (database reads and canopy downloads overlap)."""
         with self._lock:
             missing = [k for k in keys if (k, crs) not in self._tiles]
@@ -331,7 +334,7 @@ class RegionService:
                 self._tiles.popitem(last=False)
             return out
 
-    def region(self, keys: Iterable[Tuple[int, int]], crs: str) -> Region:
+    def region(self, keys: Iterable[Tuple[int, int]], crs: int) -> Region:
         keys = frozenset(keys)
         cache_key = (keys, crs)
         with self._lock:
@@ -391,12 +394,11 @@ class RegionService:
             return []
         tr = to_metric(crs_for(lon))
         px, py = tr.transform(lon, lat)
-        point = shapely.Point(px, py)
         best: Dict[str, Tuple[float, object]] = {}
         for row in rows:
             coords = unpack_line(row["geom"])
             x, y = tr.transform(coords[:, 0], coords[:, 1])
-            d = float(shapely.LineString(np.column_stack([x, y])).distance(point)) if len(coords) >= 2 else math.inf
+            d = point_polyline_distance(px, py, np.column_stack([x, y])) if len(coords) >= 2 else math.inf
             sid = segment_id(row["a"], row["b"])
             if d <= radius_m and (sid not in best or d < best[sid][0]):
                 best[sid] = (d, row)

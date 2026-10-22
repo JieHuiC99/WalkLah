@@ -3,10 +3,11 @@
 A sample point is shaded when it is under a covered walkway or roof, under tree
 canopy >= 3 m (Meta/WRI canopy height), or inside the shadow cast by a building.
 
-Building shadow = convex hull of the footprint and the footprint shifted away
-from the sun by height / tan(sun altitude). Simplifications (stated in the app):
-heights are often estimated, concave buildings over-shade slightly, tree
-shadows cast sideways are ignored, and clouds are not modelled.
+Building shadow: footprints are drawn once into a 2 m height grid; a point is in
+shadow when, looking towards the sun, a building cell rises above the sun line
+(height > distance x tan(sun altitude)). Shadows are cut off at 150 m.
+Simplifications (stated in the app): heights are often estimated, tree shadows
+cast sideways are ignored, and clouds are not modelled.
 """
 
 import json
@@ -17,13 +18,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from shapely import STRtree, convex_hull, multipoints, points
+
+from .geo import rasterize_max
 
 from .conditions import CANOPY, COVERED, Conditions
 from .sun import MALAYSIA, SunPosition, sun_position
 
 PILOT_LATLON = (3.118, 101.655)
 MAX_SHADOW_M = 150.0
+CELL_M = 2.0
+MAX_GRID_CELLS = 40_000_000  # coarser cells for very large areas (memory stays below ~40 MB)
 
 
 class ShadeModel:
@@ -45,6 +49,7 @@ class ShadeModel:
             self._estimated = np.asarray(estimated, dtype=bool)
         self._cache: Dict[Tuple[int, int], np.ndarray] = {}
         self._lock = threading.Lock()
+        self._grid: Optional[Tuple[np.ndarray, float, float, float]] = None  # heights, x0, y0, cell
 
     def _load_buildings(self) -> None:
         if self._footprints is not None:
@@ -98,31 +103,52 @@ class ShadeModel:
         c = self.conditions
         return np.concatenate([c.segments[sid].flags for sid in c.seg_order]) if c.seg_order else np.empty(0, int)
 
-    def _building_shadow(self, sun: SunPosition) -> np.ndarray:
+    def _height_grid(self) -> Optional[Tuple[np.ndarray, float, float, float]]:
+        """Building heights (m) on a grid covering every sample point plus the longest shadow."""
+        if self._grid is not None:
+            return self._grid
         self._load_buildings()
         c = self.conditions
+        if not self._rings or not len(c.sample_x):
+            return None
+        x0 = float(c.sample_x.min()) - MAX_SHADOW_M
+        y0 = float(c.sample_y.min()) - MAX_SHADOW_M
+        x1 = float(c.sample_x.max()) + MAX_SHADOW_M
+        y1 = float(c.sample_y.max()) + MAX_SHADOW_M
+        cell = CELL_M
+        while ((x1 - x0) / cell) * ((y1 - y0) / cell) > MAX_GRID_CELLS:
+            cell *= 1.5
+        nx_, ny_ = int(math.ceil((x1 - x0) / cell)) + 1, int(math.ceil((y1 - y0) / cell)) + 1
+        heights = rasterize_max(self._rings, self._heights, x0, y0, cell, (ny_, nx_))
+        self._grid = (heights, x0, y0, cell)
+        return self._grid
+
+    def _building_shadow(self, sun: SunPosition) -> np.ndarray:
+        c = self.conditions
         result = np.zeros(len(c.sample_x), dtype=bool)
-        if not self._footprints or not len(c.sample_x):
+        grid = self._height_grid()
+        if grid is None:
             return result
+        heights, x0, y0, cell = grid
         tan_alt = math.tan(math.radians(max(sun.altitude, 1.0)))
-        away = math.radians((sun.azimuth + 180) % 360)  # shadows fall away from the sun
-        dx, dy = math.sin(away), math.cos(away)
-        hulls = []
-        for ring, height in zip(self._rings, self._heights):
-            length = min(height / tan_alt, MAX_SHADOW_M)
-            if length < 0.5:
-                continue
-            moved = ring + np.array([dx * length, dy * length])
-            hulls.append(np.vstack([ring, moved]))
-        if not hulls:
+        reach = min(MAX_SHADOW_M, float(heights.max()) / tan_alt)
+        if reach < 0.5:
             return result
-        # Convex hull of the footprint plus its shifted copy (robust even for messy footprints).
-        coords = np.vstack(hulls)
-        owner = np.repeat(np.arange(len(hulls)), [len(h) for h in hulls])
-        tree = STRtree(convex_hull(multipoints(coords, indices=owner)))
-        pts = points(c.sample_x, c.sample_y)
-        hit_points, _ = tree.query(pts, predicate="within")
-        result[np.unique(hit_points)] = True
+        towards = math.radians(sun.azimuth)  # look from each point towards the sun
+        dx, dy = math.sin(towards), math.cos(towards)
+        ny_, nx_ = heights.shape
+        step = cell / 2
+        px, py = c.sample_x, c.sample_y
+        for k in range(0, int(reach / step) + 1):
+            dist = k * step
+            ci = ((px + dx * dist - x0) / cell).astype(int)
+            cj = ((py + dy * dist - y0) / cell).astype(int)
+            ok = (ci >= 0) & (ci < nx_) & (cj >= 0) & (cj < ny_) & ~result
+            if not ok.any():
+                continue
+            idx = np.flatnonzero(ok)
+            h = heights[cj[idx], ci[idx]]
+            result[idx[h > max(dist, 0.0) * tan_alt]] = True
         return result
 
     def segment_shade(self, when: datetime) -> Dict[str, float]:

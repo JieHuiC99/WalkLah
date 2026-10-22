@@ -127,8 +127,9 @@ crossings[], covered_pct, tree_canopy_pct, green_pct, shade_now_pct | null, sun{
 Report object:
 ```
 {id, segment_id, category, description | null, status, latitude, longitude, created_at,
- temporary_or_permanent, expires_at | null, has_photo, source: "community" | "operator",
- confirmations: {still_there, cleared, last_at}, community_confirmed: bool}
+ temporary_or_permanent, expires_at | null, has_photo, photo_url | null,
+ source: "community" | "operator" | "sample", confirmations: {still_there, cleared, last_at},
+ community_confirmed: bool}
 ```
 Statuses: `pending | verified_active | verified_cleared | disputed | stale`.
 Temporary categories (`blocked_walkway`, `flooding`, `construction`, `lighting_out`) expire to `stale`
@@ -138,7 +139,10 @@ after 6 h (env `WALKLAH_TEMP_EXPIRY_HOURS`) unless verified again or confirmed "
 `{"reports": [Report]}`
 
 ### POST /reports → 201 Report + `merged`
-`{category, description?, latitude, longitude, segment_id?, temporary_or_permanent?, device?}`.
+`{category, description?, latitude, longitude, segment_id?, temporary_or_permanent?, device?, photo?}`.
+`photo` is a data URL (`data:image/jpeg|png|webp;base64,…`, at most 1.5 MB decoded; checked by its bytes):
+`400` if it is not an image, `413` if too large. The app resizes and re-encodes photos, which removes EXIF
+location data. A merged report gets the photo if it had none.
 `description` ≤ 280 characters. Without `segment_id` the server snaps to the nearest path; points more than
 60 m from a path are rejected (400). The reporting phone (`device`) counts as the first "still there".
 An open report of the same category within 30 m is not duplicated: the request becomes a "still there"
@@ -147,6 +151,13 @@ vote on it and the response has `"merged": true`.
 ### POST /reports/{id}/confirm → Report
 `{"still_there": bool, "device": string(8–64)}` — one vote per device. Enough "still there" votes on a
 temporary hazard set `community_confirmed`, which reroutes Practical/Enjoyable until an operator decides.
+
+### GET /reports/{id}/photo
+The report's photo (`image/jpeg|png|webp`), `404` if none. Public, like the report itself.
+
+### POST /reports/{id}/photo → Report
+`{"photo": data URL, "device"?}` — add a photo to a report that has none (walk-mode quick reports);
+`409` if it already has one. Rate limited like votes. Recorded in the history as `photo_added`.
 
 ### GET /reports/{id}/history
 `{"report_id", "events": [{event_type, verifier_role, time, evidence_reference}]}`
@@ -221,7 +232,19 @@ Any segment in Malaysia. Audit values override OSM-derived values immediately an
 
 ### POST /admin/reset  (operator)
 Clears reports, verification events and confirmations. Route statistics, feedback and audits are kept.
-(`/demo/reset` remains as a hidden alias for older scripts.)
+(`/demo/reset` remains as a hidden alias for older scripts.) Uploaded photos of cleared reports are deleted.
+
+### POST /admin/sample-data  (operator)
+Loads (or reloads) about ten labelled sample reports with `source: "sample"`: pending, confirmed by walkers,
+verified, cleared, stale and an official closure, each with a history and most with an openly licensed photo.
+They behave like real reports (maps, rerouting) but add no trip statistics. Reports outside the loaded map
+are skipped: `{loaded, skipped[], report_ids[]}`.
+
+### DELETE /admin/sample-data  (operator)
+Removes only sample reports: `{removed}`.
+
+### GET /sample-data/credits
+Authors and licences of the sample photos (`backend/sample_data/CREDITS.md`).
 
 ## 8. Data and licences
 
@@ -231,4 +254,5 @@ Clears reports, verification events and confirmations. Route statistics, feedbac
 - Tree canopy: Meta and World Resources Institute, Global Canopy Height 1 m (CC BY 4.0), source imagery
   © 2016 Maxar (UM area); ESA WorldCover 10 m 2021 (CC BY 4.0) elsewhere.
 - Weather: Open-Meteo.com (CC BY 4.0). Sun position: NOAA solar calculator equations.
+- Sample report photos: Wikimedia Commons, CC0 / CC BY 2.0 / CC BY-SA 2.0 (`backend/sample_data/CREDITS.md`).
 - Build: `python scripts/build_malaysia.py --pbf …osm.pbf --overture` (see `backend/HANDOFF.md`).

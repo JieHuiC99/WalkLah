@@ -7,7 +7,7 @@ import math
 from datetime import datetime
 
 import pytest
-import shapely
+from app.geo import polygon_wkb
 
 from app import region_db
 from app.canopy import CanopySource
@@ -58,9 +58,10 @@ def build_db(path):
     conn.execute("INSERT INTO points_rt VALUES (1, ?, ?, ?, ?)", (LON0 + D, LON0 + D, LAT0 + 0.00005, LAT0 + 0.00005))
     conn.execute("INSERT INTO crossings VALUES (2, 'signalised')")
     # A tall building south of the direct path.
-    poly = shapely.box(LON0 + 0.5 * D, LAT0 - 0.4 * D, LON0 + 1.5 * D, LAT0 - 0.1 * D)
-    conn.execute("INSERT INTO buildings VALUES (1, 40.0, 0, ?)", (shapely.to_wkb(poly),))
-    b = poly.bounds
+    w, so, e, n = LON0 + 0.5 * D, LAT0 - 0.4 * D, LON0 + 1.5 * D, LAT0 - 0.1 * D
+    ring = [(w, so), (e, so), (e, n), (w, n), (w, so)]
+    conn.execute("INSERT INTO buildings VALUES (1, 40.0, 0, ?)", (polygon_wkb([ring]),))
+    b = (w, so, e, n)
     conn.execute("INSERT INTO buildings_rt VALUES (1, ?, ?, ?, ?)", (b[0], b[2], b[1], b[3]))
     places = [
         (1, "osm_n1", "ZUS Coffee", "ZUS Coffee", "food", None, LAT0 + 0.001, LON0, "Bandar Puteri, Puchong",
