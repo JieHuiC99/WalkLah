@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 
 from . import photos, sample_data
 from .rate_limit import enforce
@@ -124,7 +124,11 @@ def create_reports_router(graph_service) -> APIRouter:
 
     @router.get("/reports/{report_id}/photo")
     def report_photo(report_id: str):
-        found = photos.resolve(store.photo_path(report_id))
+        stored = store.photo_path(report_id)
+        remote = photos.public_url(stored)
+        if remote:
+            return RedirectResponse(remote, status_code=307)
+        found = photos.resolve(stored)
         if found is None:
             raise HTTPException(status_code=404, detail="No photo for this report.")
         path, media_type = found

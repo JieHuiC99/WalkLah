@@ -84,3 +84,32 @@ def test_sample_reports_load_tagged_and_remove_cleanly():
     assert [r["id"] for r in store.list()] == [real["id"]]
     assert client.delete("/admin/sample-data").status_code == 401
     assert "CC BY" in client.get("/sample-data/credits").text
+
+
+def test_photos_go_to_supabase_storage_when_configured(monkeypatch):
+    calls = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout=None):
+        calls.append((request.get_method(), request.full_url, dict(request.header_items()), request.data))
+        return Response()
+
+    monkeypatch.setenv("SUPABASE_URL", "https://example-project.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "sb_secret_test")
+    monkeypatch.setattr("app.photos.urllib.request.urlopen", fake_urlopen)
+    report = client.post("/reports", json={"category": "flooding", "photo": data_url(JPEG), **SPOT}).json()
+    method, url, headers, body = calls[0]
+    assert method == "POST" and url.startswith("https://example-project.supabase.co/storage/v1/object/photos/")
+    assert headers["Apikey"] == "sb_secret_test" and "Authorization" not in headers and body == JPEG
+    name = url.rsplit("/", 1)[1]
+    assert report["photo_url"] == f"https://example-project.supabase.co/storage/v1/object/public/photos/{name}"
+    served = client.get(f"/reports/{report['id']}/photo", follow_redirects=False)
+    assert served.status_code == 307 and served.headers["location"] == report["photo_url"]
+    store.clear()
+    assert calls[-1][0] == "DELETE" and calls[-1][1].endswith(f"/photos/{name}")

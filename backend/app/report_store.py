@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from . import db as database
+from . import photos
 
 # Reports, their verification history and community confirmations: SQLite locally, Postgres when deployed
 # (DATABASE_URL, see app/db.py).
@@ -164,7 +165,8 @@ class ReportStore:
             "temporary_or_permanent": row["temporary_or_permanent"],
             "expires_at": row["expires_at"],
             "has_photo": bool(row["photo_path"]),
-            "photo_url": f"/reports/{_report_id(row['num'])}/photo" if row["photo_path"] else None,
+            "photo_url": (photos.public_url(row["photo_path"]) or f"/reports/{_report_id(row['num'])}/photo")
+            if row["photo_path"] else None,
             "source": row["source"],
             "confirmations": {
                 "still_there": still,
@@ -508,8 +510,6 @@ class ReportStore:
 
     def clear(self) -> None:
         """Remove all reports (and their uploaded photos). Route statistics, feedback and audits are kept."""
-        from . import photos
-
         with self._lock:
             stored = [r["photo_path"] for r in self._db.execute("SELECT photo_path FROM reports WHERE photo_path IS NOT NULL")]
             self._db.executescript("DELETE FROM confirmations; DELETE FROM verification_events; DELETE FROM reports")

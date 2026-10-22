@@ -1,8 +1,11 @@
-"""Report photos: validated on upload, stored on disk, served back to walkers and operators.
+"""Report photos: validated on upload, stored on disk or in Supabase Storage, served back to walkers and operators.
 
 Phones send a JPEG/PNG/WebP as a data URL inside the report JSON (the app resizes it and
 re-encodes it, which also drops EXIF location data). Sample-report photos ship with the
 repository in sample_data/photos and are referenced as "sample:<file>".
+
+When SUPABASE_URL and SUPABASE_SERVICE_KEY are set (deployed), uploads go to the public
+"photos" bucket and are referenced as "storage:<file>"; otherwise they are kept on disk.
 """
 
 import base64
@@ -10,6 +13,8 @@ import binascii
 import os
 import re
 import secrets
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -17,6 +22,8 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 SAMPLE_PHOTOS = BACKEND_DIR / "sample_data" / "photos"
 MAX_BYTES = 1_500_000
 SAMPLE_PREFIX = "sample:"
+STORAGE_PREFIX = "storage:"
+BUCKET = "photos"
 
 _DATA_URL = re.compile(r"^data:image/(jpeg|jpg|png|webp);base64,(?P<data>[A-Za-z0-9+/=\s]+)$")
 _TYPES = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
@@ -38,6 +45,35 @@ def photo_dir() -> Path:
     if db and db != ":memory:":
         return Path(db).resolve().parent / "photos"
     return BACKEND_DIR / "data" / "photos"
+
+
+def _storage() -> Optional[Tuple[str, str]]:
+    """(Supabase project URL, service key) when photos go to Supabase Storage."""
+    url, key = os.environ.get("SUPABASE_URL", "").rstrip("/"), os.environ.get("SUPABASE_SERVICE_KEY", "")
+    return (url, key) if url and key else None
+
+
+def _storage_request(method: str, name: str, data: Optional[bytes] = None, media_type: Optional[str] = None) -> None:
+    url, key = _storage()
+    headers = {"apikey": key}
+    if not key.startswith("sb_"):  # legacy service_role JWT
+        headers["Authorization"] = f"Bearer {key}"
+    if media_type:
+        headers.update({"Content-Type": media_type, "Cache-Control": "max-age=86400", "x-upsert": "false"})
+    request = urllib.request.Request(f"{url}/storage/v1/object/{BUCKET}/{name}", data=data, headers=headers,
+                                     method=method)
+    with urllib.request.urlopen(request, timeout=20):
+        pass
+
+
+def public_url(stored: Optional[str]) -> Optional[str]:
+    """Direct link for a photo kept in Supabase Storage (None for photos on disk or in the repository)."""
+    if not stored or not stored.startswith(STORAGE_PREFIX):
+        return None
+    storage = _storage()
+    base = storage[0] if storage else os.environ.get("SUPABASE_URL", "").rstrip("/")
+    name = Path(stored[len(STORAGE_PREFIX):]).name
+    return f"{base}/storage/v1/object/public/{BUCKET}/{name}" if base else None
 
 
 def sniff(data: bytes) -> Optional[str]:
@@ -65,16 +101,22 @@ def save_data_url(data_url: str) -> str:
     ext = sniff(data)
     if ext is None:
         raise PhotoError("The photo must be a JPEG, PNG or WebP image.")
+    name = f"{secrets.token_hex(12)}.{ext}"
+    if _storage():
+        try:
+            _storage_request("POST", name, data, _TYPES[ext])
+        except (urllib.error.URLError, OSError):
+            raise PhotoError("The photo could not be saved. Please try again.", status=503)
+        return STORAGE_PREFIX + name
     folder = photo_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    name = f"{secrets.token_hex(12)}.{ext}"
     (folder / name).write_bytes(data)
     return name
 
 
 def resolve(stored: Optional[str]) -> Optional[Tuple[Path, str]]:
-    """(file path, media type) for a stored name, or None if missing."""
-    if not stored:
+    """(file path, media type) for a stored name, or None if missing (or kept in Supabase Storage)."""
+    if not stored or stored.startswith(STORAGE_PREFIX):
         return None
     if stored.startswith(SAMPLE_PREFIX):
         path = SAMPLE_PHOTOS / Path(stored[len(SAMPLE_PREFIX):]).name
@@ -88,6 +130,13 @@ def resolve(stored: Optional[str]) -> Optional[Tuple[Path, str]]:
 def delete(stored: Optional[str]) -> None:
     """Remove an uploaded photo (sample photos belong to the repository and are kept)."""
     if not stored or stored.startswith(SAMPLE_PREFIX):
+        return
+    if stored.startswith(STORAGE_PREFIX):
+        if _storage():
+            try:
+                _storage_request("DELETE", Path(stored[len(STORAGE_PREFIX):]).name)
+            except (urllib.error.URLError, OSError):
+                pass  # an orphaned file in the bucket is harmless
         return
     path = photo_dir() / Path(stored).name
     try:
