@@ -33,7 +33,6 @@ registerMs({
   Auto: 'Auto',
   On: 'Hidup',
   Off: 'Mati',
-  'Waze for Walking': 'Waze untuk Berjalan Kaki',
   'Good morning!': 'Selamat pagi!',
   'Good afternoon!': 'Selamat petang!',
   'Good evening!': 'Selamat malam!',

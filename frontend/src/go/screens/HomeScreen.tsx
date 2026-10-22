@@ -29,7 +29,6 @@ export function HomeScreen({ from, to, prefs, onPrefs, onOpenPicker, onSwap, onF
             <span>
               Walk<em>Lah</em>
             </span>
-            <small>{t('Waze for Walking')}</small>
           </span>
           <button
             type="button"
