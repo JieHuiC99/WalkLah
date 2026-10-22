@@ -138,7 +138,7 @@ class PostgresDatabase(Database):
 
 def connect(path: Optional[str] = None) -> Database:
     """Postgres if a postgres:// URL is given (or DATABASE_URL is set and no path is), else SQLite."""
-    target = path or os.environ.get("DATABASE_URL") or ""
+    target = (path or os.environ.get("DATABASE_URL") or "").strip().strip('"').strip("'")
     if target.startswith(("postgres://", "postgresql://")):
         return PostgresDatabase(target)
     from .report_store import DEFAULT_DB

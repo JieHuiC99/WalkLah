@@ -182,7 +182,7 @@ class PlaceIndex:
     @classmethod
     def from_env(cls, db: RegionDB, streets: Optional[Callable[[float, float], Iterable]] = None) -> "PlaceIndex":
         """The Postgres copy when DATABASE_URL is set and the national database is not here."""
-        url = os.environ.get("DATABASE_URL", "")
+        url = os.environ.get("DATABASE_URL", "").strip().strip('"').strip("'")
         if url.startswith(("postgres://", "postgresql://")) and not db.available:
             return cls(_PostgresPlaces(url, streets))
         return cls(db)

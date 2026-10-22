@@ -9,6 +9,7 @@ When SUPABASE_URL and SUPABASE_SERVICE_KEY are set (deployed), uploads go to the
 """
 
 import base64
+import logging
 import binascii
 import os
 import re
@@ -23,6 +24,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 SAMPLE_PHOTOS = BACKEND_DIR / "sample_data" / "photos"
 MAX_BYTES = 1_500_000
 SAMPLE_PREFIX = "sample:"
+logger = logging.getLogger("walklah.photos")
 STORAGE_PREFIX = "storage:"
 BUCKET = "photos"
 
@@ -52,7 +54,9 @@ def photo_dir() -> Path:
 
 def _storage() -> Optional[Tuple[str, str]]:
     """(Supabase project URL, service key) when photos go to Supabase Storage."""
-    url, key = os.environ.get("SUPABASE_URL", "").rstrip("/"), os.environ.get("SUPABASE_SERVICE_KEY", "")
+    # Trimmed: values pasted into a dashboard often carry a stray space or line break.
+    url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    key = os.environ.get("SUPABASE_SERVICE_KEY", "").strip().strip('"').strip("'")
     return (url, key) if url and key else None
 
 
@@ -74,7 +78,7 @@ def public_url(stored: Optional[str]) -> Optional[str]:
     if not stored or not stored.startswith(STORAGE_PREFIX):
         return None
     storage = _storage()
-    base = storage[0] if storage else os.environ.get("SUPABASE_URL", "").rstrip("/")
+    base = storage[0] if storage else os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
     name = Path(stored[len(STORAGE_PREFIX):]).name
     return f"{base}/storage/v1/object/public/{BUCKET}/{name}" if base else None
 
@@ -108,7 +112,11 @@ def save_data_url(data_url: str) -> str:
     if _storage():
         try:
             _storage_request("POST", name, data, _TYPES[ext])
-        except (urllib.error.URLError, OSError):
+        except urllib.error.HTTPError as e:
+            logger.error("Photo upload to Supabase Storage failed: HTTP %s %s", e.code, e.read()[:200])
+            raise PhotoError("The photo could not be saved. Please try again.", status=503)
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            logger.error("Photo upload to Supabase Storage failed: %s", type(e).__name__)
             raise PhotoError("The photo could not be saved. Please try again.", status=503)
         return STORAGE_PREFIX + name
     folder = photo_dir()
@@ -138,7 +146,7 @@ def delete(stored: Optional[str]) -> None:
         if _storage():
             try:
                 _storage_request("DELETE", Path(stored[len(STORAGE_PREFIX):]).name)
-            except (urllib.error.URLError, OSError):
+            except (urllib.error.URLError, OSError, ValueError):
                 pass  # an orphaned file in the bucket is harmless
         return
     path = photo_dir() / Path(stored).name
