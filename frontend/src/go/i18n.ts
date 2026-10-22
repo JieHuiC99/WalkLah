@@ -1,4 +1,4 @@
-// English / Bahasa Melayu for WalkLah Go. English text is the key; anything without a
+// English / Bahasa Melayu for the WalkLah walker view. English text is the key; anything without a
 // translation stays in English (never blank). Place and street names are never translated.
 
 export type Lang = 'en' | 'ms'

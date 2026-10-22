@@ -5,10 +5,10 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import GoApp from './go/GoApp.tsx'
 import InsightsApp from './insights/InsightsApp.tsx'
 
-// Two products on one codebase (proposal §9): WalkLah Go for walkers (default) and
-// WalkLah Insights for township operators (?app=insights).
+// One app, two views (proposal §9): the walker view (default) and the township
+// operator view (?app=insights).
 const isInsights = new URLSearchParams(window.location.search).get('app') === 'insights'
-document.title = isInsights ? 'WalkLah Insights' : 'WalkLah Go'
+document.title = 'WalkLah'
 
 // Installable app: the service worker caches only the app shell (production builds only,
 // so development always loads fresh code).

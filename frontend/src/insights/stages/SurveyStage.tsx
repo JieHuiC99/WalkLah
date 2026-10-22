@@ -157,7 +157,7 @@ export function SurveyStage({ operatorKey, overview, refresh }: StageProps) {
             <input type="file" accept=".csv,text/csv" onChange={(e) => void onFile(e)} />
           </label>
         </div>
-        <p className="muted small">Tip: tap a path in WalkLah Go to see its segment ID.</p>
+        <p className="muted small">Tip: tap a path in the walker view to see its segment ID.</p>
         {pending && (
           <div className="upload-preview">
             <strong>

@@ -123,7 +123,7 @@ export function TrackStage({ operatorKey, overview, reports, trends, refresh, fl
       </p>
 
       {reports.length === 0 ? (
-        <p className="empty-note">No reports in this area yet. Reports from WalkLah Go appear here.</p>
+        <p className="empty-note">No reports in this area yet. Reports from walkers appear here.</p>
       ) : (
         <ul className="ops-list">
           {[...reports].sort(queueOrder).map((report) => {

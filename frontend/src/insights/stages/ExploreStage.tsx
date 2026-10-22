@@ -25,7 +25,7 @@ export function ExploreStage({ operatorKey, overview, bbox, trends }: StageProps
 
       {e && e.route_requests_30d === 0 ? (
         <p className="empty-note">
-          No opted-in route requests in this area yet. In WalkLah Go, walkers can turn on "Share anonymous route stats" in How WalkLah works.
+          No opted-in route requests in this area yet. In the walker view, walkers can turn on "Share anonymous route stats" in How WalkLah works.
         </p>
       ) : null}
 

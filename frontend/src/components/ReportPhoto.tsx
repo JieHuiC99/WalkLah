@@ -37,7 +37,7 @@ export function PhotoViewer({ src, sample, onClose }: { src: string; sample?: bo
   return (
     <div className="photo-viewer" role="dialog" aria-modal="true" aria-label={t('Report photo')} onClick={onClose}>
       <img src={src} alt={t('Report photo')} onClick={(e) => e.stopPropagation()} />
-      {sample && <p className="photo-viewer__note">{t('Sample photo (openly licensed); see credits in Insights.')}</p>}
+      {sample && <p className="photo-viewer__note">{t('Sample photo (openly licensed); see credits in the operator view.')}</p>}
       <button ref={closeRef} type="button" className="photo-viewer__close" onClick={onClose} aria-label={t('Close')}>
         <Icon name="x" size={22} />
       </button>

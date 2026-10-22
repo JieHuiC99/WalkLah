@@ -100,7 +100,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 const json = (body: unknown) => JSON.stringify(body)
 
-// ---- walkers (WalkLah Go) ------------------------------------------------
+// ---- walkers ----------------------------------------------------------------
 
 export const getHealth = () => request<HealthResponse>('/health', { timeoutMs: 5_000 })
 
@@ -198,7 +198,7 @@ export const sendFeedback = (
 
 export const getSummary = () => request<InsightsSummary>('/insights/summary')
 
-// ---- operators (WalkLah Insights) ---------------------------------------
+// ---- operators ---------------------------------------------------------------
 // The operator key is only sent when the server is configured with one (WALKLAH_OPERATOR_KEY).
 
 /** bbox = "west,south,east,north" limits a view to one area; null = everywhere. */

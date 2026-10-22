@@ -18,7 +18,7 @@ function frameScale(): number {
 }
 
 /**
- * WalkLah Go is a phone app. On a laptop or projector it is shown inside a phone frame that is
+ * The WalkLah walker view is a phone app. On a laptop or projector it is shown inside a phone frame that is
  * always laid out at real phone size and scaled as a whole to fit the window (small laptops,
  * browser zoom, projectors). On a real phone (≤ 500 px wide) the frame disappears.
  */
@@ -32,13 +32,13 @@ export function DeviceFrame({ children }: { children: ReactNode }) {
 
   return (
     <div className="device-stage">
-      <aside className="device-side" aria-label={t('About WalkLah Go')}>
+      <aside className="device-side" aria-label={t('About WalkLah')}>
         <div className="device-side__brand">
           <span className="brand-tile">
             <Icon name="walk" size={22} />
           </span>
           <span className="device-side__name">
-            Walk<em>Lah</em> <span>Go</span>
+            Walk<em>Lah</em>
           </span>
         </div>
         <p className="device-side__lead">{t('Know what a walk is like before you start it — anywhere in Malaysia.')}</p>
@@ -57,7 +57,7 @@ export function DeviceFrame({ children }: { children: ReactNode }) {
           </li>
         </ul>
         <a className="device-side__link" href="?app=insights">
-          {t('WalkLah Insights for township operators')} <Icon name="arrowRight" size={16} />
+          {t('For township operators')} <Icon name="arrowRight" size={16} />
         </a>
         <p className="device-side__note">{t('Open this page on your phone to use it full-screen, or install it to your home screen.')}</p>
       </aside>

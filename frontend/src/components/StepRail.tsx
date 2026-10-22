@@ -13,7 +13,7 @@ interface Props {
   onSelect?: (stage: StepStage) => void
 }
 
-/** The S.T.E.P. pipeline as navigation for WalkLah Insights: one stage highlighted, all reachable. */
+/** The S.T.E.P. pipeline as navigation for the operator view: one stage highlighted, all reachable. */
 export function StepRail({ current, tone = 'light', onSelect }: Props) {
   return (
     <ol className={`step-rail step-rail--${tone}`} aria-label="S.T.E.P. stages">

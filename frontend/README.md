@@ -4,12 +4,12 @@ React + TypeScript + Vite + MapLibre GL JS. One codebase, two products (proposal
 
 | App | URL | For | Layout |
 | --- | --- | --- | --- |
-| **WalkLah Go** | `/` | Walkers anywhere in Malaysia | Always a phone UI: inside a phone frame on a laptop/projector, full-screen (and installable) on a phone |
-| **WalkLah Insights** | `/?app=insights` | Township / campus operators | Desktop workspace; S.T.E.P. is the navigation |
+| **Walker view** | `/` | Walkers anywhere in Malaysia | Always a phone UI: inside a phone frame on a laptop/projector, full-screen (and installable) on a phone |
+| **Operator view** | `/?app=insights` | Township / campus operators | Desktop workspace; S.T.E.P. is the navigation |
 
 Every route line and number comes from the backend API. Unknown conditions are shown as unknown.
 
-## WalkLah Go (walkers)
+## Walker view
 
 - **Home:** start and destination, "to get somewhere" vs "for the walk", step-free, and an English / Bahasa
   Melayu switch.
@@ -39,7 +39,7 @@ Every route line and number comes from the backend API. Unknown conditions are s
 - **Installable:** add to the home screen from Chrome/Edge/Safari; the app shell opens offline (routes and
   reports always come live).
 
-## WalkLah Insights (operators)
+## Operator view
 
 Works on **the map area** (pan to your township) or all of Malaysia. *Export CSV* saves the area's reports;
 *Print report* gives a one-page township summary (save as PDF). A heatmap shows open reports or trips that
@@ -54,7 +54,7 @@ met a barrier.
   a new walkway and see before/after distances between the stations, bus stops and everyday destinations
   around it, with an optional cost estimate (RM per metre saved). The live map never changes.
 
-Insights needs no key. A public deployment can require one by setting `WALKLAH_OPERATOR_KEY` on the backend;
+The operator view needs no key. A public deployment can require one by setting `WALKLAH_OPERATOR_KEY` on the backend;
 the app then asks for it. The key is never put in a `VITE_*` variable or the URL.
 
 ## Run
@@ -101,8 +101,8 @@ Shareable links keep the trip and language, e.g.
 covered. Switch the time to 9 pm: the cards show lighting, and walk mode warns before unlit stretches.
 
 **C · Report → confirm → reroute → prioritise:** report flooding on the Practical route, confirm it from two
-more phones (Community › Still there): Practical now avoids it. In Insights › Track it is flagged as
-confirmed by walkers; verify or clear it. Insights › Prioritise ranks it and a scenario shows what fixing it
+more phones (Community › Still there): Practical now avoids it. In the operator view › Track it is flagged as
+confirmed by walkers; verify or clear it. Operator view › Prioritise ranks it and a scenario shows what fixing it
 would save.
 
 **D · Bahasa Melayu:** tap *BM* on the home screen (or open a link with `?lang=ms`).
@@ -118,7 +118,7 @@ sun position: NOAA equations · fonts: Plus Jakarta Sans and Caveat (SIL OFL 1.1
 
 ```
 src/
-  main.tsx            picks WalkLah Go or WalkLah Insights (?app=insights); registers the service worker
+  main.tsx            picks the walker or operator view (?app=insights); registers the service worker
   api/walklahApi.ts   all HTTP calls (API v3), timeouts, optional operator key header, ApiError
   go/                 walker app: GoApp, screens/ (Home, Explore, Walk, Report, Community), LocationPicker,
                       sheets, walk.ts (route progress), i18n.ts + i18n.ms.ts (English / Bahasa Melayu)

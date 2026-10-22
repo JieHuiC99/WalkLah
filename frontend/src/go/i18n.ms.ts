@@ -1,4 +1,4 @@
-// Bahasa Melayu for WalkLah Go. Keys are the English text used in the app.
+// Bahasa Melayu for the WalkLah walker view. Keys are the English text used in the app.
 import { registerMs } from './i18n'
 
 registerMs({
@@ -53,7 +53,7 @@ registerMs({
   'Swap start and destination': 'Tukar titik mula dan destinasi',
   'Choose a start': 'Pilih titik mula',
   'Where are you walking to?': 'Anda hendak berjalan ke mana?',
-  'About WalkLah Go': 'Tentang WalkLah Go',
+  'About WalkLah': 'Tentang WalkLah',
   'About WalkLah and settings': 'Tentang WalkLah dan tetapan',
   'Shortest, Practical and Enjoyable routes between any two places':
     'Laluan Terpendek, Praktikal dan Selesa antara mana-mana dua tempat',
@@ -61,7 +61,7 @@ registerMs({
     'Teduhan mengikut waktu, lampu selepas gelap, berbumbung ketika hujan',
   'Walk mode with turn-by-turn steps and heads-ups': 'Mod berjalan dengan arahan selangkah demi selangkah dan amaran awal',
   'Hazards reported and confirmed by other walkers': 'Halangan dilaporkan dan disahkan oleh pejalan kaki lain',
-  'WalkLah Insights for township operators': 'WalkLah Insights untuk pihak berkuasa tempatan',
+  'For township operators': 'Untuk pihak berkuasa tempatan',
   'Open this page on your phone to use it full-screen, or install it to your home screen.':
     'Buka halaman ini pada telefon untuk skrin penuh, atau pasang pada skrin utama.',
 
@@ -417,7 +417,7 @@ registerMs({
   'View photo': 'Lihat foto',
   'Report photo': 'Foto laporan',
   Close: 'Tutup',
-  'Sample photo (openly licensed); see credits in Insights.': 'Foto contoh (berlesen terbuka); lihat kredit dalam Insights.',
+  'Sample photo (openly licensed); see credits in the operator view.': 'Foto contoh (berlesen terbuka); lihat kredit dalam paparan pihak pengurusan.',
   Sample: 'Contoh',
   'Example report loaded by an operator': 'Laporan contoh dimuatkan oleh pihak pengurusan',
 })

@@ -231,7 +231,7 @@ export default function InsightsApp() {
           </span>
           <span>
             <strong>
-              Walk<em>Lah</em> Insights
+              Walk<em>Lah</em>
             </strong>
             <small>Township operator view{pilot?.coverage_area === 'malaysia' ? ' · Malaysia' : ''}</small>
           </span>
@@ -247,7 +247,7 @@ export default function InsightsApp() {
             <Icon name="book" size={16} /> Print report
           </button>
           <a href="./" className="btn btn--small btn--light">
-            <Icon name="walk" size={16} /> WalkLah Go
+            <Icon name="walk" size={16} /> Walker view
           </a>
           {key && (
             <button
@@ -381,7 +381,7 @@ function KeyGate({ onKey }: { onKey: (key: string) => void }) {
         <span className="brand-tile">
           <Icon name="lock" size={20} />
         </span>
-        <h1>WalkLah Insights</h1>
+        <h1>WalkLah</h1>
         <p>This WalkLah server is set up for named operators only. Enter the operator key from your administrator.</p>
         <label className="go-field">
           <span className="go-label">Operator key</span>
@@ -398,7 +398,7 @@ function KeyGate({ onKey }: { onKey: (key: string) => void }) {
           {checking ? 'Checking…' : 'Open Insights'}
         </button>
         <a href="./" className="key-gate__back">
-          ← Back to WalkLah Go
+          ← Back to the walker view
         </a>
       </form>
     </div>

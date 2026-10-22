@@ -9,7 +9,7 @@ const ITEMS: { tab: GoTab; label: string; icon: IconName }[] = [
   { tab: 'community', label: 'Community', icon: 'users' },
 ]
 
-/** Walker navigation only: no operator screens in WalkLah Go. */
+/** Walker navigation only: no operator screens in the walker view. */
 export function GoNav({ active, onChange }: { active: GoTab; onChange: (tab: GoTab) => void }) {
   return (
     <nav className="bottom-nav go-nav" aria-label="Main">
