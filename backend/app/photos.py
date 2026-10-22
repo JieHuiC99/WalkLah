@@ -116,7 +116,11 @@ def save_data_url(data_url: str) -> str:
             logger.error("Photo upload to Supabase Storage failed: HTTP %s %s", e.code, e.read()[:200])
             raise PhotoError("The photo could not be saved. Please try again.", status=503)
         except (urllib.error.URLError, OSError, ValueError) as e:
-            logger.error("Photo upload to Supabase Storage failed: %s", type(e).__name__)
+            # Describe the configured key's shape (never the key) so a mis-pasted value can be spotted.
+            key = _storage()[1]
+            logger.error("Photo upload to Supabase Storage failed: %s; key starts %r, %d characters, "
+                         "ascii=%s, whitespace=%s", type(e).__name__, key[:10], len(key), key.isascii(),
+                         any(c.isspace() for c in key))
             raise PhotoError("The photo could not be saved. Please try again.", status=503)
         return STORAGE_PREFIX + name
     folder = photo_dir()
