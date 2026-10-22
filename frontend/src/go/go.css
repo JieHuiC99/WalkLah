@@ -16,9 +16,10 @@
 
 .device {
   position: relative;
-  /* 390 × 844 phone, shrunk to fit the window height (no CSS transforms: the map needs real pixels). */
-  height: min(844px, calc(100dvh - 40px));
-  aspect-ratio: 390 / 844;
+  /* Always a real 390 × 844 phone screen (plus the 12 px bezel); DeviceFrame scales the whole
+     phone down with CSS zoom on short windows, so the layout inside never gets squeezed. */
+  width: 414px;
+  height: 868px;
   border: 12px solid #0b1a15;
   border-radius: 52px;
   background: #0b1a15;
@@ -52,6 +53,7 @@
 
 .device-side {
   max-width: 300px;
+  flex: 0 1 300px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -136,7 +138,7 @@
     width: 100vw;
     height: 100vh;
     height: 100dvh;
-    aspect-ratio: auto;
+    zoom: 1 !important;
     border: none;
     border-radius: 0;
     box-shadow: none;
