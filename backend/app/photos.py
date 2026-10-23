@@ -57,6 +57,7 @@ def _storage() -> Optional[Tuple[str, str]]:
     # Trimmed: values pasted into a dashboard often carry a stray space or line break.
     url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
     key = os.environ.get("SUPABASE_SERVICE_KEY", "").strip().strip('"').strip("'")
+    key = key.split()[0] if key else key  # a key is one unbroken string; ignore anything pasted after it
     return (url, key) if url and key else None
 
 
