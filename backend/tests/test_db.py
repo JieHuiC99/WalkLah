@@ -13,8 +13,12 @@ STORE_SOURCE = (Path(__file__).resolve().parent.parent / "app" / "report_store.p
 
 
 def test_translate_placeholders_and_types():
-    sql = PostgresDatabase.translate("SELECT * FROM reports WHERE num = ? AND latitude > ?")
-    assert sql == "SELECT * FROM reports WHERE num = %s AND latitude > %s"
+    sql = PostgresDatabase.render("SELECT * FROM reports WHERE num = ? AND description = ? AND latitude > ? AND x = ?",
+                                  (3, "it's 100% ?", 3.123456789, None))
+    assert sql == ("SELECT * FROM reports WHERE num = 3 AND description = 'it''s 100% ?' AND latitude > 3.123456789"
+                   " AND x = NULL")
+    with pytest.raises(ValueError):
+        PostgresDatabase.render("SELECT ?", ())
     schema = PostgresDatabase.translate(SCHEMA)
     assert "AUTOINCREMENT" not in schema and "SERIAL PRIMARY KEY" in schema
     assert not re.search(r"\bREAL\b", schema) and "DOUBLE PRECISION" in schema  # lat/lon keep full precision

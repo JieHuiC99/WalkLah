@@ -99,45 +99,58 @@ class PostgresDatabase(Database):
             user=unquote(u.username or ""), password=unquote(u.password or ""), host=u.hostname,
             port=port, database=(u.path or "/postgres").lstrip("/") or "postgres",
             ssl_context=context, timeout=20)
+        # Every statement commits on its own, so no server connection stays pinned while an instance idles.
+        self._conn.autocommit = True
 
     @staticmethod
     def translate(sql: str) -> str:
-        sql = sql.replace("%", "%%").replace("?", "%s")
+        """SQLite column types to Postgres ones (REAL would be single precision there)."""
         sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
         return re.sub(r"\bREAL\b", "DOUBLE PRECISION", sql)
+
+    @classmethod
+    def render(cls, sql: str, params: Sequence[Any]) -> str:
+        """The statement with each "?" replaced by its value, quoted by pg8000.
+
+        Sent as one simple-protocol message: Supabase's transaction pooler (port 6543) may hand the
+        separate steps of a prepared statement to different server connections, which then fails with
+        "unnamed prepared statement does not exist".
+        """
+        from pg8000.native import literal
+
+        parts = cls.translate(sql).split("?")
+        if len(parts) != len(params) + 1:
+            raise ValueError(f"{len(parts) - 1} placeholders for {len(params)} values")
+        out = [parts[0]]
+        for value, part in zip(params, parts[1:]):
+            out += [literal(value), part]
+        return "".join(out)
 
     def execute(self, sql: str, params: Sequence[Any] = ()) -> Result:
         import pg8000.dbapi
 
+        statement = self.render(sql, tuple(params))
         with self._lock:
             for attempt in (1, 2):
                 if self._conn is None:
                     self._connect()
                 cur = self._conn.cursor()
                 try:
-                    cur.execute(self.translate(sql), tuple(params))
+                    cur.execute(statement)  # no separate parameters: pg8000 uses the simple protocol
                     rows = []
                     if cur.description:
                         names = [d[0] for d in cur.description]
                         rows = [Row(zip(names, r)) for r in cur.fetchall()]
-                    # Each statement is its own short transaction. Through Supabase's transaction pooler
-                    # (port 6543) that keeps a query's steps on one server connection, and committing
-                    # straight away hands the connection back instead of pinning it while the instance idles.
-                    self._conn.commit()
                     return Result(rows, cur.rowcount)
                 except pg8000.dbapi.InterfaceError:
                     # The pooler closed an idle connection: reconnect once.
                     self._conn = None
                     if attempt == 2:
                         raise
-                except pg8000.dbapi.DatabaseError:
-                    self._conn.rollback()
-                    raise
             raise RuntimeError("unreachable")
 
     def commit(self) -> None:
-        if self._conn is not None:
-            self._conn.commit()
+        """Nothing to do: with autocommit every statement is already saved."""
 
     def columns(self, table: str) -> List[str]:
         return [r["column_name"] for r in self.execute(
