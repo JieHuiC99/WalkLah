@@ -1,0 +1,297 @@
+import type {
+  AuditRow,
+  BarrierCandidate,
+  CreateReportBody,
+  FeedbackRow,
+  HealthResponse,
+  HeatResponse,
+  InsightsSummary,
+  Issue,
+  NearSegment,
+  Overview,
+  Pilot,
+  Place,
+  RainMode,
+  Report,
+  ReportEvent,
+  ReverseResult,
+  RouteMode,
+  RoutesResponse,
+  ScenarioRequest,
+  ScenarioResult,
+  SegmentCard,
+  Trends,
+  ValidationErrorItem,
+  VerifyStatus,
+} from '../types'
+
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/+$/, '')
+
+// Generous: the first request after a quiet spell also starts the server and loads map tiles.
+const DEFAULT_TIMEOUT_MS = 20_000
+// The backend loads its graph and shade model lazily, so the first route request can take several seconds.
+const ROUTE_TIMEOUT_MS = 45_000
+
+/** status 0 = the request never got a response (network down or timeout). */
+export class ApiError extends Error {
+  readonly status: number
+  readonly kind: 'http' | 'network' | 'timeout'
+
+  constructor(status: number, message: string, kind: ApiError['kind'] = 'http') {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.kind = kind
+  }
+}
+
+function describeValidation(items: ValidationErrorItem[]): string {
+  return items
+    .map((item) => {
+      const field = item.loc.filter((part) => part !== 'body' && part !== 'query').join('.')
+      return field ? `${field}: ${item.msg}` : item.msg
+    })
+    .join('; ')
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '')
+  try {
+    const body: unknown = JSON.parse(text)
+    if (body && typeof body === 'object' && 'detail' in body) {
+      const detail = (body as { detail: unknown }).detail
+      if (typeof detail === 'string') return detail
+      if (Array.isArray(detail)) return describeValidation(detail as ValidationErrorItem[])
+    }
+  } catch {
+    // Not JSON.
+  }
+  return text.trim() || response.statusText || `Request failed (${response.status})`
+}
+
+interface RequestOptions extends RequestInit {
+  timeoutMs?: number
+  operatorKey?: string | null
+  text?: boolean
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, operatorKey, text, ...init } = options
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string>) }
+  if (init.body) headers['Content-Type'] = 'application/json'
+  if (operatorKey) headers['X-Operator-Key'] = operatorKey
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal })
+  } catch {
+    if (controller.signal.aborted) {
+      throw new ApiError(0, `The WalkLah server took longer than ${timeoutMs / 1000} s to answer.`, 'timeout')
+    }
+    throw new ApiError(
+      0,
+      import.meta.env.DEV
+        ? `Can't reach the WalkLah server at ${API_BASE}. Is the backend running?`
+        : "Can't reach WalkLah right now. Check your connection and try again.",
+      'network',
+    )
+  } finally {
+    window.clearTimeout(timer)
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorMessage(response))
+  }
+  return (text ? await response.text() : await response.json()) as T
+}
+
+const json = (body: unknown) => JSON.stringify(body)
+
+// ---- walkers ----------------------------------------------------------------
+
+export const getHealth = () => request<HealthResponse>('/health', { timeoutMs: 5_000 })
+
+export const getPilot = () => request<Pilot>('/pilot', { timeoutMs: ROUTE_TIMEOUT_MS })
+
+/** Places matching q, ranked towards `near` (the map centre or the walker's location). */
+export async function searchPlaces(q: string, near?: { latitude: number; longitude: number } | null): Promise<Place[]> {
+  const params = new URLSearchParams({ q })
+  if (near) {
+    params.set('lat', near.latitude.toFixed(5))
+    params.set('lon', near.longitude.toFixed(5))
+  }
+  return (await request<{ places: Place[] }>(`/places?${params}`)).places
+}
+
+export async function nearbyPlaces(
+  near: { latitude: number; longitude: number },
+  filter: { kind?: string; category?: string },
+  radiusM = 2500,
+): Promise<Place[]> {
+  const params = new URLSearchParams({
+    lat: near.latitude.toFixed(5),
+    lon: near.longitude.toFixed(5),
+    radius_m: String(radiusM),
+  })
+  if (filter.kind) params.set('kind', filter.kind)
+  if (filter.category) params.set('category', filter.category)
+  return (await request<{ places: Place[] }>(`/places/nearby?${params}`)).places
+}
+
+export const reverseLookup = (lat: number, lon: number) =>
+  request<ReverseResult>(`/reverse?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`)
+
+export interface RoutesQuery {
+  start: { latitude: number; longitude: number }
+  end: { latitude: number; longitude: number }
+  /** 'YYYY-MM-DDTHH:MM' in Malaysia time, or omitted for now */
+  at?: string
+  stepFree: boolean
+  shareStats: boolean
+  rain?: RainMode
+}
+
+export function getRoutes(query: RoutesQuery): Promise<RoutesResponse> {
+  const params = new URLSearchParams({
+    start_lat: String(query.start.latitude),
+    start_lon: String(query.start.longitude),
+    end_lat: String(query.end.latitude),
+    end_lon: String(query.end.longitude),
+    step_free: String(query.stepFree),
+    share_stats: String(query.shareStats),
+    rain: query.rain ?? 'auto',
+  })
+  if (query.at) params.set('at', query.at)
+  return request<RoutesResponse>(`/routes?${params}`, { timeoutMs: ROUTE_TIMEOUT_MS })
+}
+
+export async function getReports(): Promise<Report[]> {
+  return (await request<{ reports: Report[] }>('/reports')).reports
+}
+
+export const createReport = (body: CreateReportBody) =>
+  request<Report>('/reports', { method: 'POST', body: json(body), timeoutMs: body.photo ? 30_000 : undefined })
+
+export const addReportPhoto = (id: string, photo: string, device: string) =>
+  request<Report>(`/reports/${encodeURIComponent(id)}/photo`, { method: 'POST', body: json({ photo, device }), timeoutMs: 30_000 })
+
+export const confirmReport = (id: string, stillThere: boolean, device: string) =>
+  request<Report>(`/reports/${encodeURIComponent(id)}/confirm`, {
+    method: 'POST',
+    body: json({ still_there: stillThere, device }),
+  })
+
+export async function nearSegments(lat: number, lon: number): Promise<NearSegment[]> {
+  return (await request<{ segments: NearSegment[] }>(`/segments/near?lat=${lat}&lon=${lon}`)).segments
+}
+
+export const getSegment = (id: string, at?: string) =>
+  request<SegmentCard>(`/segments/${encodeURIComponent(id)}${at ? `?at=${encodeURIComponent(at)}` : ''}`, {
+    timeoutMs: ROUTE_TIMEOUT_MS,
+  })
+
+/** near: roughly where the walk was (the server keeps only a ~1 km cell). */
+export const sendFeedback = (
+  mode: RouteMode,
+  passable: 'yes' | 'partly' | 'no',
+  note: string | null,
+  device: string,
+  near?: { latitude: number; longitude: number } | null,
+) =>
+  request<{ mode: RouteMode; passable: string }>('/feedback', {
+    method: 'POST',
+    body: json({ mode, passable, note, device, latitude: near?.latitude ?? null, longitude: near?.longitude ?? null }),
+  })
+
+export const getSummary = () => request<InsightsSummary>('/insights/summary')
+
+// ---- operators ---------------------------------------------------------------
+// The operator key is only sent when the server is configured with one (WALKLAH_OPERATOR_KEY).
+
+/** bbox = "west,south,east,north" limits a view to one area; null = everywhere. */
+const area = (bbox?: string | null) => (bbox ? `bbox=${encodeURIComponent(bbox)}` : '')
+
+export const getOverview = (key: string, bbox?: string | null) =>
+  request<Overview>(`/insights/overview?${area(bbox)}`, { operatorKey: key })
+
+export async function getIssues(key: string, bbox?: string | null): Promise<{ issues: Issue[]; formula: string }> {
+  return request(`/insights/issues?${area(bbox)}`, { operatorKey: key })
+}
+
+export const getHeat = (key: string, bbox: string | null, kind: 'reports' | 'trips') =>
+  request<HeatResponse>(`/insights/heat?kind=${kind}&${area(bbox)}`, { operatorKey: key })
+
+export const getTrends = (key: string, bbox?: string | null) =>
+  request<Trends>(`/insights/trends?${area(bbox)}`, { operatorKey: key })
+
+/** Saves the area's reports as a CSV file (fetched with the key header, then downloaded). */
+export async function downloadReportsCsv(key: string, bbox?: string | null): Promise<void> {
+  const text = await request<string>(`/insights/export.csv?${area(bbox)}`, { operatorKey: key, text: true })
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `walklah-reports-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export const verifyReport = (key: string, id: string, status: VerifyStatus, evidence?: string) =>
+  request<Report>(`/reports/${encodeURIComponent(id)}/verify`, {
+    method: 'PATCH',
+    body: json({ status, evidence: evidence || null }),
+    operatorKey: key,
+  })
+
+export async function getReportHistory(id: string): Promise<ReportEvent[]> {
+  return (await request<{ events: ReportEvent[] }>(`/reports/${encodeURIComponent(id)}/history`)).events
+}
+
+export const createClosure = (key: string, body: CreateReportBody) =>
+  request<Report>('/operator/closures', { method: 'POST', body: json(body), operatorKey: key })
+
+export const evaluateScenario = (key: string, body: ScenarioRequest) =>
+  request<ScenarioResult>('/scenarios/evaluate', {
+    method: 'POST',
+    body: json(body),
+    operatorKey: key,
+    timeoutMs: ROUTE_TIMEOUT_MS,
+  })
+
+export async function getBarrierCandidates(key: string, bbox?: string | null): Promise<BarrierCandidate[]> {
+  return (await request<{ barriers: BarrierCandidate[] }>(`/scenarios/candidates?${area(bbox)}`, { operatorKey: key }))
+    .barriers
+}
+
+export async function getAudit(key: string): Promise<AuditRow[]> {
+  return (await request<{ rows: AuditRow[] }>('/audit', { operatorKey: key })).rows
+}
+
+export const uploadAudit = (key: string, rows: AuditRow[]) =>
+  request<{ saved: number; audited_segments: number }>('/audit', {
+    method: 'POST',
+    body: json({ rows }),
+    operatorKey: key,
+  })
+
+export const auditTemplate = () => request<string>('/audit/template', { text: true })
+
+export async function getFeedback(key: string, bbox?: string | null): Promise<FeedbackRow[]> {
+  return (await request<{ feedback: FeedbackRow[] }>(`/insights/feedback?${area(bbox)}`, { operatorKey: key })).feedback
+}
+
+export const loadSampleData = (key: string) =>
+  request<{ loaded: number; skipped: string[] }>('/admin/sample-data', { method: 'POST', operatorKey: key, timeoutMs: 30_000 })
+
+export const removeSampleData = (key: string) =>
+  request<{ removed: number }>('/admin/sample-data', { method: 'DELETE', operatorKey: key })
+
+export const SAMPLE_CREDITS_URL = `${API_BASE}/sample-data/credits`
+
+export const clearAllReports = (key: string) =>
+  request<{ status: string }>('/admin/reset', { method: 'POST', operatorKey: key })
+
+export function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message
+  if (error instanceof Error) return error.message
+  return 'Something went wrong.'
+}
