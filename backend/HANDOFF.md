@@ -50,6 +50,10 @@ The 1.6 GB database does not fit a serverless function, so the deployed API uses
 - **Database**: `DATABASE_URL` (Supabase pooler, `postgresql://…`) switches reports, votes, audits and
   statistics to Postgres (`app/db.py`, pg8000), and search to a Postgres copy of the covered cities' places
   (`scripts\upload_places.py`).
+  Use the **transaction pooler** address (port 6543): the session pooler allows only 15 clients, which a few
+  serverless instances use up, and the direct `db.…supabase.co` address is IPv6-only. `app/db.py` sends each
+  statement as one simple-protocol message with autocommit, because the transaction pooler may run the steps
+  of a prepared statement on different server connections.
 - **Photos**: with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`, uploads go to the public bucket `photos`.
 - **CORS**: `WALKLAH_CORS_ORIGINS` = the site's URL (comma-separated for several).
 - Upload scripts read secrets from `backend\.env.deploy` (git-ignored; `DATABASE_URL`, `SUPABASE_URL`,
