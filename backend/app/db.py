@@ -88,13 +88,18 @@ class PostgresDatabase(Database):
         import pg8000.dbapi
 
         u = urlparse(self.url)
+        port = u.port or 5432
+        # Supabase's transaction pooler (6543) may run the steps of one query on different server
+        # connections, which pg8000 cannot follow; the same pooler's session mode (5432) keeps them together.
+        if (u.hostname or "").endswith("pooler.supabase.com") and port == 6543:
+            port = 5432
         # Encrypted like libpq's sslmode=require (Supabase signs with its own CA).
         context = ssl.create_default_context()
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         self._conn = pg8000.dbapi.connect(
             user=unquote(u.username or ""), password=unquote(u.password or ""), host=u.hostname,
-            port=u.port or 5432, database=(u.path or "/postgres").lstrip("/") or "postgres",
+            port=port, database=(u.path or "/postgres").lstrip("/") or "postgres",
             ssl_context=context, timeout=20)
         # Every statement commits on its own: an open transaction would pin one of the pooler's few
         # connections for as long as a serverless instance stays alive.

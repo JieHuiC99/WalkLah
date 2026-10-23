@@ -146,12 +146,20 @@ class ReportStore:
 
     # ---- helpers -------------------------------------------------------
 
-    def _row_to_report(self, row) -> Dict:
-        counts = self._db.execute(
-            f"SELECT SUM({STILL}) AS still, SUM({CLEARED}) AS cleared, MAX(time) AS last"
-            " FROM confirmations WHERE report_num = ?",
-            (row["num"],),
-        ).fetchone()
+    def _vote_counts(self, num: Optional[int] = None) -> Dict[int, Dict]:
+        """Votes per report (all reports in one query, so listing stays fast on a remote database)."""
+        sql = (f"SELECT report_num, SUM({STILL}) AS still, SUM({CLEARED}) AS cleared, MAX(time) AS last"
+               " FROM confirmations")
+        args: tuple = ()
+        if num is not None:
+            sql += " WHERE report_num = ?"
+            args = (num,)
+        return {r["report_num"]: r for r in self._db.execute(sql + " GROUP BY report_num", args)}
+
+    def _row_to_report(self, row, counts: Optional[Dict[int, Dict]] = None) -> Dict:
+        if counts is None:
+            counts = self._vote_counts(row["num"])
+        counts = counts.get(row["num"]) or {"still": 0, "cleared": 0, "last": None}
         still, cleared = counts["still"] or 0, counts["cleared"] or 0
         return {
             "id": _report_id(row["num"]),
@@ -235,7 +243,8 @@ class ReportStore:
         with self._lock:
             self.expire_stale()
             rows = self._db.execute("SELECT * FROM reports ORDER BY num").fetchall()
-            return [self._row_to_report(r) for r in rows]
+            counts = self._vote_counts()
+            return [self._row_to_report(r, counts) for r in rows]
 
     def get(self, id: str) -> Optional[Dict]:
         num = _report_num(id)
