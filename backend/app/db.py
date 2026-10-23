@@ -10,6 +10,7 @@ import re
 import sqlite3
 import ssl
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Iterator, List, Optional, Sequence
 from urllib.parse import unquote, urlparse
@@ -83,16 +84,13 @@ class PostgresDatabase(Database):
     def __init__(self, url: str):
         self.url = url
         self._conn = None
+        self._lock = threading.RLock()  # one connection, shared by the report store and search
 
     def _connect(self):
         import pg8000.dbapi
 
         u = urlparse(self.url)
         port = u.port or 5432
-        # Supabase's transaction pooler (6543) may run the steps of one query on different server
-        # connections, which pg8000 cannot follow; the same pooler's session mode (5432) keeps them together.
-        if (u.hostname or "").endswith("pooler.supabase.com") and port == 6543:
-            port = 5432
         # Encrypted like libpq's sslmode=require (Supabase signs with its own CA).
         context = ssl.create_default_context()
         context.check_hostname = False
@@ -101,9 +99,6 @@ class PostgresDatabase(Database):
             user=unquote(u.username or ""), password=unquote(u.password or ""), host=u.hostname,
             port=port, database=(u.path or "/postgres").lstrip("/") or "postgres",
             ssl_context=context, timeout=20)
-        # Every statement commits on its own: an open transaction would pin one of the pooler's few
-        # connections for as long as a serverless instance stays alive.
-        self._conn.autocommit = True
 
     @staticmethod
     def translate(sql: str) -> str:
@@ -114,26 +109,31 @@ class PostgresDatabase(Database):
     def execute(self, sql: str, params: Sequence[Any] = ()) -> Result:
         import pg8000.dbapi
 
-        for attempt in (1, 2):
-            if self._conn is None:
-                self._connect()
-            cur = self._conn.cursor()
-            try:
-                cur.execute(self.translate(sql), tuple(params))
-                rows = []
-                if cur.description:
-                    names = [d[0] for d in cur.description]
-                    rows = [Row(zip(names, r)) for r in cur.fetchall()]
-                return Result(rows, cur.rowcount)
-            except pg8000.dbapi.InterfaceError:
-                # The pooler closed an idle connection: reconnect once.
-                self._conn = None
-                if attempt == 2:
+        with self._lock:
+            for attempt in (1, 2):
+                if self._conn is None:
+                    self._connect()
+                cur = self._conn.cursor()
+                try:
+                    cur.execute(self.translate(sql), tuple(params))
+                    rows = []
+                    if cur.description:
+                        names = [d[0] for d in cur.description]
+                        rows = [Row(zip(names, r)) for r in cur.fetchall()]
+                    # Each statement is its own short transaction. Through Supabase's transaction pooler
+                    # (port 6543) that keeps a query's steps on one server connection, and committing
+                    # straight away hands the connection back instead of pinning it while the instance idles.
+                    self._conn.commit()
+                    return Result(rows, cur.rowcount)
+                except pg8000.dbapi.InterfaceError:
+                    # The pooler closed an idle connection: reconnect once.
+                    self._conn = None
+                    if attempt == 2:
+                        raise
+                except pg8000.dbapi.DatabaseError:
+                    self._conn.rollback()
                     raise
-            except pg8000.dbapi.DatabaseError:
-                self._conn.rollback()
-                raise
-        raise RuntimeError("unreachable")
+            raise RuntimeError("unreachable")
 
     def commit(self) -> None:
         if self._conn is not None:
@@ -144,11 +144,19 @@ class PostgresDatabase(Database):
             "SELECT column_name FROM information_schema.columns WHERE table_name = ?", (table,))]
 
 
+_SHARED: dict = {}
+_SHARED_LOCK = threading.Lock()
+
+
 def connect(path: Optional[str] = None) -> Database:
     """Postgres if a postgres:// URL is given (or DATABASE_URL is set and no path is), else SQLite."""
     target = (path or os.environ.get("DATABASE_URL") or "").strip().strip('"').strip("'")
     if target.startswith(("postgres://", "postgresql://")):
-        return PostgresDatabase(target)
+        # One connection per server instance: the free Supabase pooler allows only a few.
+        with _SHARED_LOCK:
+            if target not in _SHARED:
+                _SHARED[target] = PostgresDatabase(target)
+            return _SHARED[target]
     from .report_store import DEFAULT_DB
 
     default = DEFAULT_DB

@@ -28,7 +28,9 @@ app = FastAPI(title="WalkLah Backend")
 async def json_errors(request: Request, call_next):
     try:
         return await call_next(request)
-    except Exception:
+    except Exception as e:
+        # The short reason first: hosting logs cut long tracebacks off before the last line.
+        logger.error("Unhandled %s on %s %s: %s", type(e).__name__, request.method, request.url.path, str(e)[:300])
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
