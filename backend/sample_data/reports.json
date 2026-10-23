@@ -1,0 +1,314 @@
+{
+  "note": "Labelled sample reports for Insights (source = sample). Times are hours before loading. Photos: see CREDITS.md.",
+  "reports": [
+    {
+      "key": "um-flooding-kantin",
+      "category": "flooding",
+      "description": "Path between the engineering canteen and the main hall floods after heavy rain; water over the kerb.",
+      "latitude": 3.11916,
+      "longitude": 101.65565,
+      "status": "verified_active",
+      "hours_ago": 20,
+      "photo": "flooding-kl.jpg",
+      "votes": [
+        {
+          "still_there": true,
+          "hours_ago": 18
+        },
+        {
+          "still_there": true,
+          "hours_ago": 17
+        }
+      ],
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 20
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 18
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 17
+        },
+        {
+          "type": "verified_active",
+          "role": "operator",
+          "hours_ago": 16,
+          "evidence": "Site check: about 15 cm of water, drain inlet blocked by leaves. Works order raised."
+        }
+      ]
+    },
+    {
+      "key": "um-branches",
+      "category": "blocked_walkway",
+      "description": "Large branches down across the footpath after last night's storm.",
+      "latitude": 3.12035,
+      "longitude": 101.6545,
+      "status": "pending",
+      "hours_ago": 5,
+      "photo": "fallen-branches.jpg",
+      "votes": [
+        {
+          "still_there": true,
+          "hours_ago": 5
+        },
+        {
+          "still_there": true,
+          "hours_ago": 4
+        },
+        {
+          "still_there": true,
+          "hours_ago": 3
+        }
+      ],
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 5
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 4
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 3
+        }
+      ]
+    },
+    {
+      "key": "um-lrt-crossing",
+      "category": "inaccessible_crossing",
+      "description": "No kerb ramp at this crossing near the station; wheelchairs and prams can't get up the kerb.",
+      "latitude": 3.1146,
+      "longitude": 101.6612,
+      "status": "pending",
+      "hours_ago": 72,
+      "photo": "no-kerb-ramp.jpg",
+      "votes": [
+        {
+          "still_there": true,
+          "hours_ago": 60
+        },
+        {
+          "still_there": true,
+          "hours_ago": 30
+        }
+      ],
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 72
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 60
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 30
+        }
+      ]
+    },
+    {
+      "key": "um-cracked-paving",
+      "category": "other",
+      "description": "Cracked, uneven slabs; easy to trip and hard going in a wheelchair.",
+      "latitude": 3.121216,
+      "longitude": 101.653623,
+      "status": "pending",
+      "hours_ago": 48,
+      "photo": "broken-sidewalk.jpg",
+      "temporary_or_permanent": "permanent",
+      "votes": [
+        {
+          "still_there": true,
+          "hours_ago": 40
+        }
+      ],
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 48
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 40
+        }
+      ]
+    },
+    {
+      "key": "um-lake-lights",
+      "category": "lighting_out",
+      "description": "Two lamps out along the lake path; very dark after 8 pm.",
+      "latitude": 3.119519,
+      "longitude": 101.656838,
+      "status": "verified_cleared",
+      "hours_ago": 96,
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 96
+        },
+        {
+          "type": "verified_active",
+          "role": "operator",
+          "hours_ago": 90,
+          "evidence": "Night check: 2 lamps out."
+        },
+        {
+          "type": "verified_cleared",
+          "role": "operator",
+          "hours_ago": 30,
+          "evidence": "Both lamps replaced by maintenance."
+        }
+      ]
+    },
+    {
+      "key": "um-drain-works",
+      "category": "construction",
+      "description": "Drain upgrading works: footpath closed until Friday. Use the other side of the road.",
+      "latitude": 3.1205,
+      "longitude": 101.6575,
+      "status": "verified_active",
+      "hours_ago": 26,
+      "operator": true,
+      "events": [
+        {
+          "type": "operator_closure",
+          "role": "operator",
+          "hours_ago": 26
+        }
+      ]
+    },
+    {
+      "key": "kl-taman-melati",
+      "category": "other",
+      "description": "No shade or shelter along this path to the LRT station; very hot at midday.",
+      "latitude": 3.2196,
+      "longitude": 101.7219,
+      "status": "pending",
+      "hours_ago": 30,
+      "photo": "pavement-taman-melati.jpg",
+      "temporary_or_permanent": "permanent",
+      "votes": [
+        {
+          "still_there": true,
+          "hours_ago": 20
+        }
+      ],
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 30
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 20
+        }
+      ]
+    },
+    {
+      "key": "kl-bukit-bintang",
+      "category": "blocked_walkway",
+      "description": "Promotional booth blocking half the walkway; people step onto the road.",
+      "latitude": 3.1466,
+      "longitude": 101.7113,
+      "status": "pending",
+      "hours_ago": 2,
+      "votes": [
+        {
+          "still_there": true,
+          "hours_ago": 1
+        }
+      ],
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 2
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 1
+        }
+      ]
+    },
+    {
+      "key": "kl-sentral-flood",
+      "category": "flooding",
+      "description": "Puddles across the walkway to the station entrance.",
+      "latitude": 3.134,
+      "longitude": 101.6863,
+      "status": "stale",
+      "hours_ago": 50,
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 50
+        },
+        {
+          "type": "stale",
+          "role": "system",
+          "hours_ago": 44,
+          "evidence": "expired without reconfirmation"
+        }
+      ]
+    },
+    {
+      "key": "puchong-bk5",
+      "category": "missing_sidewalk",
+      "description": "The sidewalk ends at the junction; people walk on the road shoulder to the station.",
+      "latitude": 3.05847,
+      "longitude": 101.620359,
+      "status": "pending",
+      "hours_ago": 28,
+      "votes": [
+        {
+          "still_there": true,
+          "hours_ago": 22
+        },
+        {
+          "still_there": true,
+          "hours_ago": 10
+        }
+      ],
+      "events": [
+        {
+          "type": "reported",
+          "role": "community",
+          "hours_ago": 28
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 22
+        },
+        {
+          "type": "confirmed_still_there",
+          "role": "community",
+          "hours_ago": 10
+        }
+      ]
+    }
+  ]
+}

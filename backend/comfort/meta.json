@@ -1,0 +1,32 @@
+{
+  "built_at": "2026-10-18T04:28:01.150045Z",
+  "bbox": {
+    "south": 3.1,
+    "west": 101.637,
+    "north": 3.136,
+    "east": 101.673
+  },
+  "crs": "EPSG:32647",
+  "sample_step_m": 8.0,
+  "default_building_height_m": 9.0,
+  "canopy_source": "Meta/WRI Global Canopy Height 1 m (CC BY 4.0)",
+  "sources": [
+    "\u00a9 OpenStreetMap contributors (ODbL)",
+    "Meta and World Resources Institute, Global Canopy Height (CC BY 4.0)"
+  ],
+  "coverage": {
+    "segments": 8574,
+    "network_km": 394.8,
+    "sidewalk_known_pct": 29.3,
+    "dedicated_footpath_pct": 28.3,
+    "lighting_known_pct": 4.2,
+    "lighting_audited_segments": 0,
+    "covered_pct": 6.9,
+    "canopy_pct": 13.4,
+    "green_pct": 1.9,
+    "steps_pct": 3.0,
+    "buildings": 6618,
+    "building_heights_real_pct": 8.5,
+    "places": 1805
+  }
+}

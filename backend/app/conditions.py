@@ -1,0 +1,148 @@
+"""Walking-condition layer (S · Survey), loaded from comfort/*.json.
+
+Built by scripts/build_comfort.py. Every attribute keeps an explicit
+"unknown" value; nothing missing is treated as good.
+"""
+
+import json
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import numpy as np
+from scipy.spatial import cKDTree
+
+from .geo import Projector, point_polyline_distance
+
+COMFORT_DIR = Path(__file__).resolve().parent.parent / "comfort"
+TO_UTM = Projector(47)  # EPSG:32647, the CRS of comfort/*.json
+# Samples are at most this far apart along a segment (scripts/build_comfort.py, app/region.py).
+MAX_SAMPLE_GAP_M = 8.0
+
+COVERED, CANOPY, GREEN = 1, 2, 4
+
+
+@dataclass
+class Segment:
+    id: str
+    highway: str
+    length: float
+    name: Optional[str]
+    sidewalk: str  # footpath | yes | no | unknown
+    steps: bool
+    stress: str  # low | medium | high | unknown
+    lit: str  # yes | no | unknown
+    lit_source: Optional[str]  # audit | osm_tag | osm_lamp | None
+    crossings: List[Dict]
+    xs: np.ndarray
+    ys: np.ndarray
+    flags: np.ndarray
+
+    def fraction(self, flag: int) -> float:
+        return float(np.mean((self.flags & flag) > 0)) if len(self.flags) else 0.0
+
+
+class Conditions:
+    def __init__(self, directory: Path = COMFORT_DIR):
+        self.directory = directory
+        self.segments: Dict[str, Segment] = {}
+        self.meta: Dict = {}
+        self.available = False
+        self._lock = threading.Lock()
+        self._loaded = False
+        self._sample_tree: Optional[cKDTree] = None
+        # Flat arrays of every sample point, for vectorised shadow tests.
+        self.sample_x = np.empty(0)
+        self.sample_y = np.empty(0)
+        self.sample_seg = np.empty(0, dtype=np.int32)
+        self.seg_order: List[str] = []
+
+    def load(self) -> "Conditions":
+        with self._lock:
+            if self._loaded:
+                return self
+            self._loaded = True
+            path = self.directory / "segments.json"
+            if not path.exists():
+                return self
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            meta_path = self.directory / "meta.json"
+            self.meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+            xs, ys, owner = [], [], []
+            for index, (sid, s) in enumerate(raw.items()):
+                pts = np.array(s["s"], dtype=float) if s["s"] else np.empty((0, 3))
+                seg = Segment(
+                    id=sid, highway=s["h"], length=s["len"], name=s.get("name"), sidewalk=s["sw"],
+                    steps=s["steps"], stress=s["stress"], lit=s["lit"], lit_source=s.get("lit_src"),
+                    crossings=s.get("cross", []), xs=pts[:, 0], ys=pts[:, 1], flags=pts[:, 2].astype(int),
+                )
+                self.segments[sid] = seg
+                self.seg_order.append(sid)
+                xs.append(seg.xs)
+                ys.append(seg.ys)
+                owner.append(np.full(len(seg.xs), index, dtype=np.int32))
+            self.sample_x = np.concatenate(xs) if xs else np.empty(0)
+            self.sample_y = np.concatenate(ys) if ys else np.empty(0)
+            self.sample_seg = np.concatenate(owner) if owner else np.empty(0, dtype=np.int32)
+            self.available = True
+            return self
+
+    @classmethod
+    def from_segments(cls, segments: List[Segment], meta: Optional[Dict] = None) -> "Conditions":
+        """Build an in-memory layer (used by tests with synthetic graphs)."""
+        layer = cls(directory=Path("__in_memory__"))
+        layer._loaded = True
+        layer.available = True
+        layer.meta = meta or {}
+        for index, seg in enumerate(segments):
+            layer.segments[seg.id] = seg
+            layer.seg_order.append(seg.id)
+        if not segments:
+            return layer
+        layer.sample_x = np.concatenate([s.xs for s in segments])
+        layer.sample_y = np.concatenate([s.ys for s in segments])
+        layer.sample_seg = np.concatenate(
+            [np.full(len(s.xs), i, dtype=np.int32) for i, s in enumerate(segments)])
+        return layer
+
+    def get(self, sid: str) -> Optional[Segment]:
+        self.load()
+        return self.segments.get(sid)
+
+    def apply_audit(self, rows: List[Dict]) -> int:
+        """Team field-audit results override OSM-derived lighting/sidewalk values."""
+        self.load()
+        applied = 0
+        for row in rows:
+            seg = self.segments.get(row.get("segment_id", ""))
+            if seg is None:
+                continue
+            if row.get("lit") in ("yes", "no"):
+                seg.lit, seg.lit_source = row["lit"], "audit"
+            if row.get("sidewalk") in ("yes", "no", "footpath"):
+                seg.sidewalk = row["sidewalk"]
+            applied += 1
+        return applied
+
+    def near(self, lat: float, lon: float, radius_m: float = 25.0, limit: int = 3) -> List[Dict]:
+        """Candidate path segments around a point, nearest first (for report confirmation)."""
+        self.load()
+        if not len(self.sample_x):
+            return []
+        if self._sample_tree is None:
+            self._sample_tree = cKDTree(np.column_stack([self.sample_x, self.sample_y]))
+        x, y = TO_UTM.transform(lon, lat)
+        # Any segment within radius has a sample within radius + half the sample spacing.
+        hits = self._sample_tree.query_ball_point([x, y], radius_m + MAX_SAMPLE_GAP_M)
+        ranked = []
+        for index in {int(self.sample_seg[h]) for h in hits}:
+            seg = self.segments[self.seg_order[index]]
+            d = point_polyline_distance(x, y, np.column_stack([seg.xs, seg.ys]))
+            if d <= radius_m:
+                ranked.append((d, seg.id))
+        ranked.sort()
+        return [{"segment_id": sid, "distance_m": round(d, 1)} for d, sid in ranked[:limit]]
+
+
+CONDITIONS = Conditions()

@@ -1,0 +1,7 @@
+# Local development: the API plus tests (tested with Python 3.14 on Windows).
+-r requirements.txt
+pytest==9.1.1
+httpx==0.28.1
+# Optional: reads the 1 m Meta canopy around UM and fetches new ESA WorldCover blocks.
+# Without it, routes use cached WorldCover blocks and say when canopy is unavailable.
+rasterio==1.5.2
